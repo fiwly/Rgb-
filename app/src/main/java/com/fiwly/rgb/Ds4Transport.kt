@@ -3,9 +3,12 @@ package com.fiwly.rgb
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
+import java.io.IOException
 import java.lang.reflect.InvocationTargetException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import org.lsposed.hiddenapibypass.HiddenApiBypass
@@ -21,6 +24,8 @@ class AndroidHidHostTransport(
         private const val CONNECTION_POLICY_ALLOWED = 100
         private const val CONNECTION_POLICY_FORBIDDEN = 0
         private const val CONNECTION_POLICY_UNKNOWN = -1
+        private const val HID_CONTROL_PSM = 0x11
+        private const val HID_INTERRUPT_PSM = 0x13
         private const val CONNECT_TIMEOUT_MS = 15_000L
     }
 
@@ -253,7 +258,19 @@ class AndroidHidHostTransport(
 
         if (state != BluetoothProfile.STATE_CONNECTED) {
             val connection = ensureHidConnected(profile, ds4, 6_000L)
-            if (connection.isFailure) return connection
+            if (connection.isFailure) {
+                // Android 16/HyperOS protects BluetoothHidHost.connect() with
+                // BLUETOOTH_PRIVILEGED. Fall back to the DS4's native classic
+                // Bluetooth HID L2CAP channels; no root or USB is required.
+                val raw = rawL2capLightbar(ds4, color)
+                if (raw.isSuccess) return raw
+                return Result.failure(
+                    IllegalStateException(
+                        connection.exceptionOrNull()?.message +
+                            "; rawL2cap=" + raw.exceptionOrNull()?.message
+                    )
+                )
+            }
         }
 
         return try {
@@ -289,6 +306,46 @@ class AndroidHidHostTransport(
             )
         } catch (t: Throwable) {
             Result.failure<Unit>(t.cause ?: t)
+        }
+    }
+
+    private suspend fun rawL2capLightbar(
+        ds4: BluetoothDevice,
+        color: Ds4Color
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        var control: android.bluetooth.BluetoothSocket? = null
+        var interrupt: android.bluetooth.BluetoothSocket? = null
+        try {
+            val deviceClass = BluetoothDevice::class.java
+            control = HiddenApiBypass.invoke(
+                deviceClass, ds4, "createL2capSocket", HID_CONTROL_PSM
+            ) as? android.bluetooth.BluetoothSocket
+                ?: throw IOException("createL2capSocket(control) returned null")
+
+            control.connect()
+
+            interrupt = HiddenApiBypass.invoke(
+                deviceClass, ds4, "createL2capSocket", HID_INTERRUPT_PSM
+            ) as? android.bluetooth.BluetoothSocket
+                ?: throw IOException("createL2capSocket(interrupt) returned null")
+            interrupt.connect()
+
+            val report = Ds4Report.bluetoothLightbar(color.red, color.green, color.blue)
+            val packet = ByteArray(report.size + 1)
+            packet[0] = 0xA2.toByte()
+            report.copyInto(packet, 1)
+
+            interrupt.outputStream.use { out ->
+                out.write(packet)
+                out.flush()
+            }
+
+            Result.success(Unit)
+        } catch (t: Throwable) {
+            Result.failure(t.cause ?: t)
+        } finally {
+            try { interrupt?.close() } catch (_: Throwable) {}
+            try { control?.close() } catch (_: Throwable) {}
         }
     }
 
