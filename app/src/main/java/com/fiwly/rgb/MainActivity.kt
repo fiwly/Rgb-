@@ -10,6 +10,8 @@ import android.view.View
 import android.widget.*
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 class MainActivity:Activity(){
  private lateinit var status:TextView
@@ -25,8 +27,22 @@ class MainActivity:Activity(){
    override fun onProgressChanged(s:SeekBar?,value:Int,fromUser:Boolean){updatePreview(r.progress,g.progress,b.progress,brightness.progress)}
    override fun onStartTrackingTouch(s:SeekBar?)=Unit
    override fun onStopTrackingTouch(s:SeekBar?)=Unit})}
-  connect.setOnClickListener{requestBluetoothAndShowStatus()}
-  apply.setOnClickListener{val c=Ds4Color(r.progress,g.progress,b.progress,brightness.progress).scaled();status.text="RGB prepared: ${c.red}, ${c.green}, ${c.blue}\nTransport: ${transport.name}"}
+  connect.setOnClickListener {
+   requestBluetoothAndShowStatus()
+   lifecycleScope.launch {
+    status.text = "Connecting to Android HID Host…"
+    val result = transport.connect()
+    status.text = result.fold({ "DS4 connected through ${transport.name}" }, { "HID Host: ${it.message ?: it.javaClass.simpleName}" })
+   }
+  }
+  apply.setOnClickListener {
+   val c=Ds4Color(r.progress,g.progress,b.progress,brightness.progress).scaled()
+   lifecycleScope.launch {
+    status.text="Sending RGB ${c.red}, ${c.green}, ${c.blue}…"
+    val result=transport.setLightbar(c)
+    status.text=result.fold({ "Sent RGB ${c.red}, ${c.green}, ${c.blue}" }, { "Send failed: ${it.message ?: it.javaClass.simpleName}" })
+   }
+  }
   updatePreview(r.progress,g.progress,b.progress,brightness.progress);requestBluetoothAndShowStatus()
  }
  private fun updatePreview(r:Int,g:Int,b:Int,brightness:Int){val c=Ds4Color(r,g,b,brightness).scaled();preview.setBackgroundColor(Color.rgb(c.red,c.green,c.blue));rgbText.text="RGB ${c.red}, ${c.green}, ${c.blue}"}
