@@ -27,11 +27,14 @@ class MainActivity : ComponentActivity() {
 
     private val bluetoothPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-            val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-                (result[Manifest.permission.BLUETOOTH_CONNECT] == true &&
-                 result[Manifest.permission.BLUETOOTH_SCAN] == true)
-            if (granted) updateBluetoothStatus()
-            else status.text = "Bluetooth permission is required to control the DS4."
+            val connectGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                result[Manifest.permission.BLUETOOTH_CONNECT] == true ||
+                hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
+            val scanGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                result[Manifest.permission.BLUETOOTH_SCAN] == true ||
+                hasPermission(Manifest.permission.BLUETOOTH_SCAN)
+            if (connectGranted && scanGranted) updateBluetoothStatus()
+            else status.text = "Bluetooth permission denied. Open App info > Permissions and allow Nearby devices."
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,7 +65,7 @@ class MainActivity : ComponentActivity() {
         }
 
         connect.setOnClickListener {
-            if (!hasBluetoothPermission()) { requestBluetoothPermission(); return@setOnClickListener }
+            if (!ensureBluetoothPermission()) return@setOnClickListener
             if (btAdapter?.isEnabled != true) {
                 status.text = "Bluetooth is turned off. Turn it on and try again."
                 return@setOnClickListener
@@ -78,7 +81,7 @@ class MainActivity : ComponentActivity() {
         }
 
         apply.setOnClickListener {
-            if (!hasBluetoothPermission()) { requestBluetoothPermission(); return@setOnClickListener }
+            if (!ensureBluetoothPermission()) return@setOnClickListener
             val c = Ds4Color(r.progress, g.progress, b.progress, brightness.progress).scaled()
             lifecycleScope.launch {
                 status.text = "Sending RGB " + c.red + ", " + c.green + ", " + c.blue + "..."
@@ -94,29 +97,36 @@ class MainActivity : ComponentActivity() {
         updateBluetoothStatus()
     }
 
-    private fun hasBluetoothPermission(): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-            (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED &&
-             ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED)
-
-    private fun requestBluetoothPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            bluetoothPermissionLauncher.launch(arrayOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT
-            ))
-        }
+    private fun ensureBluetoothPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val connect = hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
+        val scan = hasPermission(Manifest.permission.BLUETOOTH_SCAN)
+        if (connect && scan) return true
+        status.text = "Requesting Nearby devices permission..."
+        bluetoothPermissionLauncher.launch(arrayOf(
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.BLUETOOTH_SCAN
+        ))
+        return false
     }
 
+    private fun hasPermission(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
     private fun updateBluetoothStatus() {
-        if (!hasBluetoothPermission()) {
-            status.text = "Allow Bluetooth permission, then press Connect."
-            return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val connect = hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
+            val scan = hasPermission(Manifest.permission.BLUETOOTH_SCAN)
+            if (!connect || !scan) {
+                status.text = "Nearby devices permission is required. Press Connect or Apply."
+                return
+            }
         }
+        val adapter = btAdapter
         status.text = when {
-            btAdapter == null -> "Bluetooth is not available on this device."
-            !btAdapter!!.isEnabled -> "Bluetooth is turned off. Turn it on and try again."
-            else -> "Bluetooth is ready. Pair the DualShock 4 in Android Bluetooth settings."
+            adapter == null -> "Bluetooth is not available on this device."
+            !adapter.isEnabled -> "Bluetooth is turned off. Turn it on and try again."
+            else -> "Bluetooth ready. Make sure DualShock 4 is connected in Android Bluetooth settings."
         }
     }
 
@@ -124,6 +134,11 @@ class MainActivity : ComponentActivity() {
         val c = Ds4Color(r, g, b, brightness).scaled()
         preview.setBackgroundColor(Color.rgb(c.red, c.green, c.blue))
         rgbText.text = "RGB " + c.red + ", " + c.green + ", " + c.blue
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::status.isInitialized) updateBluetoothStatus()
     }
 
     override fun onDestroy() {
