@@ -18,6 +18,9 @@ import kotlinx.coroutines.launch
 class MainActivity:ComponentActivity(){
  private lateinit var status:TextView;private lateinit var preview:View;private lateinit var rgbText:TextView
  private lateinit var wheel:ColorWheelView;private lateinit var brightness:SeekBar;private lateinit var slots:LinearLayout
+ private lateinit var rSeek:SeekBar;private lateinit var gSeek:SeekBar;private lateinit var bSeek:SeekBar
+ private lateinit var rText:TextView;private lateinit var gText:TextView;private lateinit var bText:TextView
+ private var syncing=false
  private lateinit var transport:Ds4Transport
  private val prefs by lazy{getSharedPreferences("ds4_rgb_slots",MODE_PRIVATE)}
  private val adapter:BluetoothAdapter? by lazy{(getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter}
@@ -26,8 +29,16 @@ class MainActivity:ComponentActivity(){
   super.onCreate(b);setContentView(R.layout.activity_main)
   status=findViewById(R.id.status);preview=findViewById(R.id.preview);rgbText=findViewById(R.id.rgbText)
   wheel=findViewById(R.id.colorWheel);brightness=findViewById(R.id.brightness);slots=findViewById(R.id.slotsContainer)
+  rSeek=findViewById(R.id.rSeek);gSeek=findViewById(R.id.gSeek);bSeek=findViewById(R.id.bSeek);rText=findViewById(R.id.rText);gText=findViewById(R.id.gText);bText=findViewById(R.id.bText)
   transport=AndroidHidHostTransport(this,adapter?:BluetoothAdapter.getDefaultAdapter())
-  wheel.onColorChanged={updatePreview()};brightness.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
+  wheel.onColorChanged={if(!syncing) syncRgbFromWheel();updatePreview()};
+  val rgbListener=object:SeekBar.OnSeekBarChangeListener{
+   override fun onProgressChanged(s:SeekBar?,p:Int,f:Boolean){if(!syncing) syncWheelFromRgb();updatePreview()}
+   override fun onStartTrackingTouch(s:SeekBar?){}
+   override fun onStopTrackingTouch(s:SeekBar?){ }
+  }
+  rSeek.setOnSeekBarChangeListener(rgbListener);gSeek.setOnSeekBarChangeListener(rgbListener);bSeek.setOnSeekBarChangeListener(rgbListener)
+  brightness.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
    override fun onProgressChanged(s:SeekBar?,p:Int,f:Boolean){updatePreview()}
    override fun onStartTrackingTouch(s:SeekBar?){};override fun onStopTrackingTouch(s:SeekBar?){}
   })
@@ -48,9 +59,20 @@ class MainActivity:ComponentActivity(){
  private fun currentColor():Ds4Color{val rgb=Color.HSVToColor(wheel.hsv);return Ds4Color(Color.red(rgb),Color.green(rgb),Color.blue(rgb),brightness.progress).scaled()}
  private fun updatePreview(){
   val c=currentColor();preview.setBackgroundColor(Color.rgb(c.red,c.green,c.blue));rgbText.text="RGB "+c.red+", "+c.green+", "+c.blue
+  if(::rText.isInitialized){rText.text="R "+c.red;gText.text="G "+c.green;bText.text="B "+c.blue}
+ }
+ private fun syncRgbFromWheel(){
+  syncing=true
+  val rgb=Color.HSVToColor(wheel.hsv);rSeek.progress=Color.red(rgb);gSeek.progress=Color.green(rgb);bSeek.progress=Color.blue(rgb)
+  syncing=false
+ }
+ private fun syncWheelFromRgb(){
+  syncing=true
+  val rgb=Color.rgb(rSeek.progress,gSeek.progress,bSeek.progress);val h=FloatArray(3);Color.colorToHSV(rgb,h);wheel.hsv=h
+  syncing=false
  }
  private fun setHex(e:EditText){
-  try{val s=e.text.toString().trim().removePrefix("#");if(s.length!=6)throw IllegalArgumentException();val rgb=Color.parseColor("#"+s);val h=FloatArray(3);Color.colorToHSV(rgb,h);wheel.hsv=h;updatePreview();status.text="Color set to #"+s.uppercase()}
+  try{val s=e.text.toString().trim().removePrefix("#");if(s.length!=6)throw IllegalArgumentException();val rgb=Color.parseColor("#"+s);val h=FloatArray(3);Color.colorToHSV(rgb,h);wheel.hsv=h;brightness.progress=100;syncRgbFromWheel();updatePreview();status.text="Color set to #"+s.uppercase()}
   catch(_:Throwable){status.text="Enter a valid HEX color, for example #7C4DFF"}
  }
  private fun buildSlots(){
