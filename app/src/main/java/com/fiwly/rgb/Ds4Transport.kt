@@ -3,8 +3,6 @@ package com.fiwly.rgb
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
-import android.content.AttributionSource
-import android.os.Build
 import java.lang.reflect.Method
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -13,7 +11,7 @@ class AndroidHidHostTransport(
     private val context: android.content.Context,
     private val adapter: BluetoothAdapter
 ) : Ds4Transport {
-    override val name = "Android HID Host (hidden API)"
+    override val name = "Android HID Host"
     private var proxy: Any? = null
     private var device: BluetoothDevice? = null
     private var listener: BluetoothProfile.ServiceListener? = null
@@ -69,88 +67,74 @@ class AndroidHidHostTransport(
 
     override suspend fun setLightbar(color: Ds4Color): Result<Unit> {
         val p = proxy
-            ?: return Result.failure<Unit>(
-                IllegalStateException("HID Host is not connected")
-            )
+            ?: return Result.failure<Unit>(IllegalStateException("HID Host is not connected"))
         val d = device
-            ?: return Result.failure<Unit>(
-                IllegalStateException("DS4 is not selected")
-            )
+            ?: return Result.failure<Unit>(IllegalStateException("DS4 is not selected"))
 
         return try {
-            val report = Ds4Report.bluetoothLightbar(
-                color.red,
-                color.green,
-                color.blue
-            )
+            val report = Ds4Report.bluetoothLightbar(color.red, color.green, color.blue)
             val hex = report.joinToString("") {
                 "%02x".format(it.toInt() and 0xFF)
             }
 
-            // Android 12+ adds AttributionSource to the hidden HID-host
-            // methods. Older Android releases use the 2/3-argument forms.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val source = context.attributionSource
+            val attempts = mutableListOf<String>()
+            val hostClass = try {
+                Class.forName("android.bluetooth.BluetoothHidHost")
+            } catch (_: Throwable) {
+                null
+            }
 
-                val sendData3 = findMethod(
-                    p,
-                    "sendData",
-                    BluetoothDevice::class.java,
-                    String::class.java,
-                    AttributionSource::class.java
+            val candidates = buildList {
+                if (hostClass != null) add(hostClass)
+                add(p.javaClass)
+            }.distinct()
+
+            for (clazz in candidates) {
+                val send = findMethod(
+                    clazz, "sendData",
+                    BluetoothDevice::class.java, String::class.java
                 )
-                if (sendData3 != null) {
-                    val sent = invokeBoolean(p, sendData3, d, hex, source)
-                    if (sent) return Result.success(Unit)
+                if (send != null) {
+                    try {
+                        val value = invokeBoolean(p, send, d, hex)
+                        attempts += "${clazz.name}.sendData(2)=$value"
+                        if (value) return Result.success(Unit)
+                    } catch (t: Throwable) {
+                        attempts += "${clazz.name}.sendData(2) threw ${shortError(t)}"
+                    }
+                } else {
+                    attempts += "${clazz.name}.sendData(2)=not-found"
                 }
 
-                val setReport4 = findMethod(
-                    p,
-                    "setReport",
+                val setReport = findMethod(
+                    clazz, "setReport",
                     BluetoothDevice::class.java,
                     Byte::class.javaPrimitiveType!!,
-                    String::class.java,
-                    AttributionSource::class.java
+                    String::class.java
                 )
-                if (setReport4 != null) {
-                    val sent = invokeBoolean(
-                        p,
-                        setReport4,
-                        d,
-                        0x02.toByte(),
-                        hex,
-                        source
-                    )
-                    if (sent) return Result.success(Unit)
+                if (setReport != null) {
+                    try {
+                        val value = invokeBoolean(p, setReport, d, 0x02.toByte(), hex)
+                        attempts += "${clazz.name}.setReport(3)=$value"
+                        if (value) return Result.success(Unit)
+                    } catch (t: Throwable) {
+                        attempts += "${clazz.name}.setReport(3) threw ${shortError(t)}"
+                    }
+                } else {
+                    attempts += "${clazz.name}.setReport(3)=not-found"
                 }
             }
 
-            val sendData2 = findMethod(
-                p,
-                "sendData",
-                BluetoothDevice::class.java,
-                String::class.java
-            )
-            if (sendData2 != null) {
-                val sent = invokeBoolean(p, sendData2, d, hex)
-                if (sent) return Result.success(Unit)
-            }
-
-            val setReport3 = findMethod(
-                p,
-                "setReport",
-                BluetoothDevice::class.java,
-                Byte::class.javaPrimitiveType!!,
-                String::class.java
-            )
-            if (setReport3 != null) {
-                val sent = invokeBoolean(p, setReport3, d, 0x02.toByte(), hex)
-                if (sent) return Result.success(Unit)
-            }
+            val methodNames = p.javaClass.methods
+                .filter { it.name == "sendData" || it.name == "setReport" }
+                .joinToString(",") { m ->
+                    m.name + "/" + m.parameterTypes.joinToString(";") { it.simpleName }
+                }
+                .ifEmpty { "none-visible" }
 
             Result.failure<Unit>(
                 UnsupportedOperationException(
-                    "Android HID Host output API is blocked or unavailable on this device"
+                    "HID output unavailable. methods=$methodNames; attempts=${attempts.joinToString(" | ")}"
                 )
             )
         } catch (t: Throwable) {
@@ -159,27 +143,32 @@ class AndroidHidHostTransport(
     }
 
     private fun findMethod(
-        target: Any,
+        clazz: Class<*>,
         name: String,
         vararg parameterTypes: Class<*>
     ): Method? {
-        val publicMatch = target.javaClass.methods.firstOrNull {
-            it.name == name &&
-                it.parameterTypes.contentEquals(parameterTypes)
-        }
-        if (publicMatch != null) return publicMatch
-
         return try {
-            target.javaClass.getDeclaredMethod(name, *parameterTypes).also {
+            clazz.getDeclaredMethod(name, *parameterTypes).also {
                 it.isAccessible = true
             }
         } catch (_: Throwable) {
-            null
+            try {
+                clazz.methods.firstOrNull {
+                    it.name == name && it.parameterTypes.contentEquals(parameterTypes)
+                }
+            } catch (_: Throwable) {
+                null
+            }
         }
     }
 
     private fun invokeBoolean(target: Any, method: Method, vararg args: Any): Boolean {
         return (method.invoke(target, *args) as? Boolean) == true
+    }
+
+    private fun shortError(t: Throwable): String {
+        val root = t.cause ?: t
+        return root.javaClass.simpleName + ":" + (root.message ?: "no-message")
     }
 
     override fun close() {
