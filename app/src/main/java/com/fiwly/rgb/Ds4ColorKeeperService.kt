@@ -27,7 +27,7 @@ class Ds4ColorKeeperService : Service() {
     }
 
     private suspend fun keepColor() {
-        while (isActive) {
+        while (scope.isActive) {
             try {
                 val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
                 if (prefs.getBoolean("auto_enabled", false)) {
