@@ -47,19 +47,29 @@ class MainActivity:ComponentActivity(){
   findViewById<Button>(R.id.setHex).setOnClickListener{setHex(findViewById<EditText>(R.id.hexText))}
   buildSlots();syncRgbFromWheel();updatePreview();updateBluetoothStatus();if(permissionGranted())startAutoRestore()
  }
- private fun startAutoRestore(){\n  if(adapter?.isEnabled!=true)return\n  ContextCompat.startForegroundService(this,Intent(this,Ds4RgbService::class.java))\n }\n private fun connectDs4(){
+ private fun startAutoRestore(){
+  if(adapter?.isEnabled!=true)return
+  ContextCompat.startForegroundService(this,Intent(this,Ds4RgbService::class.java))
+ }
+ private fun connectDs4(){
   if(!permission())return
   if(adapter?.isEnabled!=true){status.text="Bluetooth is turned off.";return}
+  startAutoRestore()
   lifecycleScope.launch{status.text="Connecting to Android HID Host...";val r=transport.connect();status.text=r.fold({"DS4 connected through "+transport.name},{"HID Host: "+(it.message?:it.javaClass.simpleName)})}
  }
  private fun sendCurrentColor(){
   if(!permission())return
-  val c=currentColor();lifecycleScope.launch{status.text="Sending RGB "+c.red+", "+c.green+", "+c.blue+"...";val r=transport.setLightbar(c);status.text=r.fold({"Sent RGB "+c.red+", "+c.green+", "+c.blue},{"Send failed: "+(it.message?:it.javaClass.simpleName)})}
+  startAutoRestore()
+  val c=currentColor()
+  persistAutoColor(c)
+  lifecycleScope.launch{status.text="Sending RGB "+c.red+", "+c.green+", "+c.blue+"...";val r=transport.setLightbar(c);status.text=r.fold({"Sent RGB "+c.red+", "+c.green+", "+c.blue},{"Send failed: "+(it.message?:it.javaClass.simpleName)})}
  }
- private fun persistAutoColor(c:Ds4Color){prefs.edit().putInt("auto_r",c.red).putInt("auto_g",c.green).putInt("auto_b",c.blue).putBoolean("auto_enabled",true).apply()}\n private fun currentColor():Ds4Color{val rgb=Color.HSVToColor(wheel.hsv);return Ds4Color(Color.red(rgb),Color.green(rgb),Color.blue(rgb),brightness.progress).scaled()}
+ private fun persistAutoColor(c:Ds4Color){prefs.edit().putInt("auto_r",c.red).putInt("auto_g",c.green).putInt("auto_b",c.blue).putBoolean("auto_enabled",true).apply()}
+ private fun currentColor():Ds4Color{val rgb=Color.HSVToColor(wheel.hsv);return Ds4Color(Color.red(rgb),Color.green(rgb),Color.blue(rgb),brightness.progress).scaled()}
  private fun updatePreview(){
   val c=currentColor();preview.setBackgroundColor(Color.rgb(c.red,c.green,c.blue));rgbText.text="RGB "+c.red+", "+c.green+", "+c.blue
-  if(::rText.isInitialized){rText.text="R "+c.red;gText.text="G "+c.green;bText.text="B "+c.blue}\n  if(::prefs.isInitialized&&!syncing)persistAutoColor(c)
+  if(::rText.isInitialized){rText.text="R "+c.red;gText.text="G "+c.green;bText.text="B "+c.blue}
+  if(::prefs.isInitialized&&!syncing)persistAutoColor(c)
  }
  private fun syncRgbFromWheel(){
   syncing=true
