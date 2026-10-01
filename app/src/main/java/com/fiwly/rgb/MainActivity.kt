@@ -2,6 +2,7 @@ package com.fiwly.rgb
 
 import android.Manifest
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.pm.PackageManager
@@ -10,7 +11,6 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.*
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -25,14 +25,18 @@ class MainActivity : ComponentActivity() {
         (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
     }
 
-    companion object {
-        private const val REQUEST_BLUETOOTH = 10
-    }
+    private val bluetoothPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+            val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                (result[Manifest.permission.BLUETOOTH_CONNECT] == true &&
+                 result[Manifest.permission.BLUETOOTH_SCAN] == true)
+            if (granted) updateBluetoothStatus()
+            else status.text = "Bluetooth permission is required to control the DS4."
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
         status = findViewById(R.id.status)
         preview = findViewById(R.id.preview)
         rgbText = findViewById(R.id.rgbText)
@@ -58,10 +62,7 @@ class MainActivity : ComponentActivity() {
         }
 
         connect.setOnClickListener {
-            if (!hasBluetoothPermission()) {
-                requestBluetoothPermission()
-                return@setOnClickListener
-            }
+            if (!hasBluetoothPermission()) { requestBluetoothPermission(); return@setOnClickListener }
             if (btAdapter?.isEnabled != true) {
                 status.text = "Bluetooth is turned off. Turn it on and try again."
                 return@setOnClickListener
@@ -77,10 +78,7 @@ class MainActivity : ComponentActivity() {
         }
 
         apply.setOnClickListener {
-            if (!hasBluetoothPermission()) {
-                requestBluetoothPermission()
-                return@setOnClickListener
-            }
+            if (!hasBluetoothPermission()) { requestBluetoothPermission(); return@setOnClickListener }
             val c = Ds4Color(r.progress, g.progress, b.progress, brightness.progress).scaled()
             lifecycleScope.launch {
                 status.text = "Sending RGB " + c.red + ", " + c.green + ", " + c.blue + "..."
@@ -103,19 +101,10 @@ class MainActivity : ComponentActivity() {
 
     private fun requestBluetoothPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT),
-                REQUEST_BLUETOOTH
-            )
-        }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_BLUETOOTH) {
-            if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) updateBluetoothStatus()
-            else status.text = "Bluetooth permission is required to control the DS4."
+            bluetoothPermissionLauncher.launch(arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT
+            ))
         }
     }
 
