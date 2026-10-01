@@ -3,6 +3,8 @@ package com.fiwly.rgb
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
+import android.content.AttributionSource
+import android.os.Build
 import java.lang.reflect.Method
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -85,30 +87,64 @@ class AndroidHidHostTransport(
                 "%02x".format(it.toInt() and 0xFF)
             }
 
-            val sendData = findMethod(
+            // Android 12+ adds AttributionSource to the hidden HID-host
+            // methods. Older Android releases use the 2/3-argument forms.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val source = context.attributionSource
+
+                val sendData3 = findMethod(
+                    p,
+                    "sendData",
+                    BluetoothDevice::class.java,
+                    String::class.java,
+                    AttributionSource::class.java
+                )
+                if (sendData3 != null) {
+                    val sent = invokeBoolean(p, sendData3, d, hex, source)
+                    if (sent) return Result.success(Unit)
+                }
+
+                val setReport4 = findMethod(
+                    p,
+                    "setReport",
+                    BluetoothDevice::class.java,
+                    Byte::class.javaPrimitiveType!!,
+                    String::class.java,
+                    AttributionSource::class.java
+                )
+                if (setReport4 != null) {
+                    val sent = invokeBoolean(
+                        p,
+                        setReport4,
+                        d,
+                        0x02.toByte(),
+                        hex,
+                        source
+                    )
+                    if (sent) return Result.success(Unit)
+                }
+            }
+
+            val sendData2 = findMethod(
                 p,
                 "sendData",
                 BluetoothDevice::class.java,
                 String::class.java
             )
-
-            if (sendData != null) {
-                val sent = invokeBoolean(p, sendData, d, hex)
+            if (sendData2 != null) {
+                val sent = invokeBoolean(p, sendData2, d, hex)
                 if (sent) return Result.success(Unit)
             }
 
-            // Some Android/OEM builds hide sendData from the normal public
-            // reflection surface but still expose setReport on the HID host.
-            val setReport = findMethod(
+            val setReport3 = findMethod(
                 p,
                 "setReport",
                 BluetoothDevice::class.java,
                 Byte::class.javaPrimitiveType!!,
                 String::class.java
             )
-
-            if (setReport != null) {
-                val sent = invokeBoolean(p, setReport, d, 0x02.toByte(), hex)
+            if (setReport3 != null) {
+                val sent = invokeBoolean(p, setReport3, d, 0x02.toByte(), hex)
                 if (sent) return Result.success(Unit)
             }
 
@@ -122,7 +158,11 @@ class AndroidHidHostTransport(
         }
     }
 
-    private fun findMethod(target: Any, name: String, vararg parameterTypes: Class<*>): Method? {
+    private fun findMethod(
+        target: Any,
+        name: String,
+        vararg parameterTypes: Class<*>
+    ): Method? {
         val publicMatch = target.javaClass.methods.firstOrNull {
             it.name == name &&
                 it.parameterTypes.contentEquals(parameterTypes)
