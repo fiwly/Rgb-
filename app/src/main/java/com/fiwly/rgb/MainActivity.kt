@@ -12,6 +12,7 @@ import android.widget.*
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import android.content.Intent
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
@@ -24,7 +25,7 @@ class MainActivity:ComponentActivity(){
  private lateinit var transport:Ds4Transport
  private val prefs by lazy{getSharedPreferences("ds4_rgb_slots",MODE_PRIVATE)}
  private val adapter:BluetoothAdapter? by lazy{(getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter}
- private val ask=registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){updateBluetoothStatus()}
+ private val ask=registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){updateBluetoothStatus();startKeeperIfReady()}
  override fun onCreate(b:Bundle?){
   super.onCreate(b);setContentView(R.layout.activity_main)
   status=findViewById(R.id.status);preview=findViewById(R.id.preview);rgbText=findViewById(R.id.rgbText)
@@ -45,7 +46,7 @@ class MainActivity:ComponentActivity(){
   findViewById<Button>(R.id.connect).setOnClickListener{connectDs4()}
   findViewById<Button>(R.id.apply).setOnClickListener{sendCurrentColor()}
   findViewById<Button>(R.id.setHex).setOnClickListener{setHex(findViewById<EditText>(R.id.hexText))}
-  buildSlots();syncRgbFromWheel();updatePreview();updateBluetoothStatus()
+  buildSlots();syncRgbFromWheel();updatePreview();updateBluetoothStatus();startKeeperIfReady()
  }
  private fun connectDs4(){
   if(!permission())return
@@ -110,11 +111,16 @@ class MainActivity:ComponentActivity(){
   if(c&&s)return true
   ask.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT,Manifest.permission.BLUETOOTH_SCAN));return false
  }
+ private fun startKeeperIfReady(){
+  if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S&&!permissionGranted())return
+  if(adapter?.isEnabled!=true)return
+  try{ContextCompat.startForegroundService(this,Intent(this,Ds4ColorKeeperService::class.java))}catch(_:Throwable){}
+ }
  private fun updateBluetoothStatus(){
   if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S&&!permissionGranted()){status.text="Allow Nearby devices permission.";return}
   status.text=when{adapter==null->"Bluetooth is not available.";adapter?.isEnabled!=true->"Bluetooth is turned off.";else->"Bluetooth ready. Connect the DS4 in Android Bluetooth settings."}
  }
  private fun permissionGranted()=ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED&&ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED
- override fun onResume(){super.onResume();if(::status.isInitialized){updateBluetoothStatus()}}
+ override fun onResume(){super.onResume();if(::status.isInitialized){updateBluetoothStatus();startKeeperIfReady()}}
  override fun onDestroy(){transport.close();super.onDestroy()}
 }
