@@ -4,6 +4,8 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
 import java.lang.reflect.Method
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Attempts to use Android's built-in HID Host profile through its hidden
@@ -21,9 +23,11 @@ class AndroidHidHostTransport(private val context: android.content.Context, priv
 
     override suspend fun connect(): Result<Unit> {
         try {
+            val latch = CountDownLatch(1)
             val l = object : BluetoothProfile.ServiceListener {
                 override fun onServiceConnected(profile: Int, p: BluetoothProfile) {
                     proxy = p
+                    latch.countDown()
                 }
                 override fun onServiceDisconnected(profile: Int) {
                     proxy = null
@@ -41,6 +45,7 @@ class AndroidHidHostTransport(private val context: android.content.Context, priv
             )
             if (!ok) return Result.failure(IllegalStateException("HID Host profile is unavailable"))
 
+            if (!latch.await(5, TimeUnit.SECONDS)) return Result.failure(IllegalStateException("HID Host service did not connect"))
             val bonded = adapter.bondedDevices
             val ds4 = bonded.firstOrNull {
                 val n = runCatching { it.name }.getOrNull() ?: ""
@@ -57,7 +62,7 @@ class AndroidHidHostTransport(private val context: android.content.Context, priv
     }
 
     override suspend fun setLightbar(color: Ds4Color): Result<Unit> {
-        val p = proxy ?: return@withContext Result.failure(IllegalStateException("HID Host is not connected"))
+        val p = proxy ?: return Result.failure(IllegalStateException("HID Host is not connected"))
         val d = device ?: return@withContext Result.failure(IllegalStateException("DS4 is not selected"))
 
         try {
