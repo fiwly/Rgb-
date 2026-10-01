@@ -15,7 +15,7 @@ class AndroidHidHostTransport(
 ) : Ds4Transport {
     companion object {
         private const val HID_HOST_PROFILE = 4
-        private const val CONNECT_TIMEOUT_MS = 8_000L
+        private const val CONNECT_TIMEOUT_MS = 15_000L
     }
 
     override val name = "Android HID Host"
@@ -60,24 +60,37 @@ class AndroidHidHostTransport(
                                 return
                             }
 
-                            val state = try {
-                                p.getConnectionState(paired)
-                            } catch (t: Throwable) {
-                                cont.resume(Result.failure<Unit>(
-                                    IllegalStateException(
-                                        "Cannot read HID connection state: ${shortError(t)}"
-                                    )
-                                ))
-                                return
+                            try {
+                                val hostClass = Class.forName("android.bluetooth.BluetoothHidHost")
+                                HiddenApiBypass.invoke(hostClass, p, "connect", paired)
+                            } catch (_: Throwable) {}
+
+                            var connected = false
+                            repeat(20) {
+                                val state = try { p.getConnectionState(paired) } catch (_: Throwable) {
+                                    BluetoothProfile.STATE_DISCONNECTED
+                                }
+                                if (state == BluetoothProfile.STATE_CONNECTED) {
+                                    device = paired
+                                    connected = true
+                                    return@repeat
+                                }
+                                Thread.sleep(350L)
                             }
 
-                            cont.resume(Result.failure<Unit>(
-                                IllegalStateException(
-                                    "DS4 found: ${paired.name ?: "Wireless Controller"}; " +
-                                        "HID state=${stateName(state)}. " +
-                                        "Android must show the controller as connected before RGB output can be sent."
-                                )
-                            ))
+                            if (connected) {
+                                cont.resume(Result.success(Unit))
+                            } else {
+                                val state = try { p.getConnectionState(paired) } catch (_: Throwable) {
+                                    BluetoothProfile.STATE_DISCONNECTED
+                                }
+                                cont.resume(Result.failure<Unit>(
+                                    IllegalStateException(
+                                        "DS4 found: " + (paired.name ?: "Wireless Controller") +
+                                            "; HID state=" + stateName(state) + " after reconnect attempt."
+                                    )
+                                ))
+                            }
                         }
 
                         override fun onServiceDisconnected(profile: Int) {
@@ -150,11 +163,30 @@ class AndroidHidHostTransport(
         }
 
         if (state != BluetoothProfile.STATE_CONNECTED) {
-            return Result.failure<Unit>(
-                IllegalStateException(
-                    "DS4 HID state is ${stateName(state)}. Android has not exposed an active HID connection."
+            try {
+                val hostClass = Class.forName("android.bluetooth.BluetoothHidHost")
+                HiddenApiBypass.invoke(hostClass, p, "connect", d)
+            } catch (_: Throwable) {}
+
+            var connected = false
+            repeat(12) {
+                val s = try { p.getConnectionState(d) } catch (_: Throwable) {
+                    BluetoothProfile.STATE_DISCONNECTED
+                }
+                if (s == BluetoothProfile.STATE_CONNECTED) {
+                    connected = true
+                    return@repeat
+                }
+                kotlinx.coroutines.delay(500L)
+            }
+
+            if (!connected) {
+                return Result.failure<Unit>(
+                    IllegalStateException(
+                        "DS4 HID state is " + stateName(state) + ". Reconnect request was sent but Android did not expose HID as CONNECTED."
+                    )
                 )
-            )
+            }
         }
 
         return try {
