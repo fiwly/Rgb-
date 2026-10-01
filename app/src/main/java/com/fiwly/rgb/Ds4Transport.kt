@@ -57,7 +57,7 @@ class AndroidHidHostTransport(private val context: android.content.Context, priv
 
     override suspend fun setLightbar(color: Ds4Color): Result<Unit> {
         val p = proxy ?: return Result.failure(IllegalStateException("HID Host is not connected"))
-        val d = device ?: return@withContext Result.failure(IllegalStateException("DS4 is not selected"))
+        val d = device ?: return Result.failure(IllegalStateException("DS4 is not selected"))
 
         try {
             val report = Ds4Report.bluetoothLightbar(color.red, color.green, color.blue)
@@ -71,7 +71,7 @@ class AndroidHidHostTransport(private val context: android.content.Context, priv
                     it.parameterTypes.size == 2 &&
                     it.parameterTypes[0] == BluetoothDevice::class.java &&
                     it.parameterTypes[1] == String::class.java
-            } ?: return@withContext Result.failure(
+            } ?: return Result.failure(
                 UnsupportedOperationException("BluetoothHidHost.sendData is unavailable on this Android build")
             )
 
