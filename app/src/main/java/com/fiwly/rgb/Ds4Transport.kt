@@ -35,12 +35,7 @@ class AndroidHidHostTransport(
         val existing = proxy
         if (existing != null) {
             device = paired
-            requestHidConnect(existing, paired)
-            return if (waitForConnected(existing, paired, CONNECT_TIMEOUT_MS)) {
-                Result.success(Unit)
-            } else {
-                Result.failure(IllegalStateException("DS4 HID did not become CONNECTED after reconnect request."))
-            }
+            return ensureHidConnected(existing, paired, CONNECT_TIMEOUT_MS)
         }
 
         val result = withTimeoutOrNull(CONNECT_TIMEOUT_MS) {
@@ -50,7 +45,6 @@ class AndroidHidHostTransport(
                         override fun onServiceConnected(profile: Int, p: BluetoothProfile) {
                             proxy = p
                             device = paired
-                            requestHidConnect(p, paired)
                             if (cont.isActive) cont.resume(Result.success(Unit))
                         }
 
@@ -85,13 +79,110 @@ class AndroidHidHostTransport(
             IllegalStateException("HID Host proxy disappeared during reconnect.")
         )
 
-        return if (waitForConnected(p, paired, CONNECT_TIMEOUT_MS)) {
-            device = paired
-            Result.success(Unit)
-        } else {
-            Result.failure(
-                IllegalStateException("DS4 HID did not become CONNECTED after reconnect request.")
+        device = paired
+        return ensureHidConnected(p, paired, CONNECT_TIMEOUT_MS)
+    }
+
+    private suspend fun ensureHidConnected(
+        p: BluetoothProfile,
+        d: BluetoothDevice,
+        timeoutMs: Long
+    ): Result<Unit> {
+        var state = connectionState(p, d)
+
+        if (state == BluetoothProfile.STATE_CONNECTED) {
+            return Result.success(Unit)
+        }
+
+        // Android HID Host requires the connection policy to be ALLOWED
+        // before its internal handler performs nativeConnect(). A plain
+        // connect() can otherwise be accepted but never reach CONNECTED.
+        val policyResult = trySetConnectionPolicyAllowed(p, d)
+        if (policyResult == true && waitForConnected(p, d, timeoutMs)) {
+            return Result.success(Unit)
+        }
+
+        state = connectionState(p, d)
+
+        if (state == BluetoothProfile.STATE_DISCONNECTING) {
+            waitForState(p, d, BluetoothProfile.STATE_DISCONNECTED, 4_000L)
+            state = connectionState(p, d)
+        }
+
+        if (state == BluetoothProfile.STATE_CONNECTING) {
+            if (waitForConnected(p, d, timeoutMs)) {
+                return Result.success(Unit)
+            }
+            state = connectionState(p, d)
+        }
+
+        if (state == BluetoothProfile.STATE_DISCONNECTED) {
+            val accepted = requestHidConnect(p, d)
+            if (accepted != false && waitForConnected(p, d, timeoutMs)) {
+                return Result.success(Unit)
+            }
+            state = connectionState(p, d)
+        }
+
+        val policy = getConnectionPolicy(p, d)
+        val policyText = when (policy) {
+            BluetoothProfile.CONNECTION_POLICY_ALLOWED -> "ALLOWED"
+            BluetoothProfile.CONNECTION_POLICY_FORBIDDEN -> "FORBIDDEN"
+            BluetoothProfile.CONNECTION_POLICY_UNKNOWN -> "UNKNOWN"
+            else -> "POLICY($policy)"
+        }
+
+        return Result.failure(
+            IllegalStateException(
+                "DS4 HID is ${stateName(state)} after reconnect request; policy=$policyText."
             )
+        )
+    }
+
+    private suspend fun waitForState(
+        p: BluetoothProfile,
+        d: BluetoothDevice,
+        wantedState: Int,
+        timeoutMs: Long
+    ) {
+        val attempts = (timeoutMs / 250L).toInt().coerceAtLeast(1)
+        repeat(attempts) {
+            if (connectionState(p, d) == wantedState) return
+            delay(250L)
+        }
+    }
+
+    private fun connectionState(p: BluetoothProfile, d: BluetoothDevice): Int =
+        try {
+            p.getConnectionState(d)
+        } catch (_: Throwable) {
+            BluetoothProfile.STATE_DISCONNECTED
+        }
+
+    private fun getConnectionPolicy(p: BluetoothProfile, d: BluetoothDevice): Int {
+        return try {
+            val hostClass = Class.forName("android.bluetooth.BluetoothHidHost")
+            (HiddenApiBypass.invoke(hostClass, p, "getConnectionPolicy", d) as? Int)
+                ?: BluetoothProfile.CONNECTION_POLICY_UNKNOWN
+        } catch (_: Throwable) {
+            BluetoothProfile.CONNECTION_POLICY_UNKNOWN
+        }
+    }
+
+    private fun trySetConnectionPolicyAllowed(p: BluetoothProfile, d: BluetoothDevice): Boolean? {
+        return try {
+            val hostClass = Class.forName("android.bluetooth.BluetoothHidHost")
+            (HiddenApiBypass.invoke(
+                hostClass,
+                p,
+                "setConnectionPolicy",
+                d,
+                BluetoothProfile.CONNECTION_POLICY_ALLOWED
+            ) as? Boolean) ?: false
+        } catch (_: SecurityException) {
+            null
+        } catch (_: Throwable) {
+            false
         }
     }
 
@@ -113,12 +204,12 @@ class AndroidHidHostTransport(
         return false
     }
 
-    private fun requestHidConnect(p: BluetoothProfile, d: BluetoothDevice) {
-        try {
+    private fun requestHidConnect(p: BluetoothProfile, d: BluetoothDevice): Boolean? {
+        return try {
             val hostClass = Class.forName("android.bluetooth.BluetoothHidHost")
-            HiddenApiBypass.invoke(hostClass, p, "connect", d)
+            HiddenApiBypass.invoke(hostClass, p, "connect", d) as? Boolean
         } catch (_: Throwable) {
-            // Normal Android HID service may still complete a pending connection.
+            null
         }
     }
 
@@ -156,19 +247,8 @@ class AndroidHidHostTransport(
         }
 
         if (state != BluetoothProfile.STATE_CONNECTED) {
-            requestHidConnect(profile, ds4)
-            if (!waitForConnected(profile, ds4, 6_000L)) {
-                state = try {
-                    profile.getConnectionState(ds4)
-                } catch (_: Throwable) {
-                    BluetoothProfile.STATE_DISCONNECTED
-                }
-                return Result.failure(
-                    IllegalStateException(
-                        "DS4 HID state is ${stateName(state)} after reconnect request."
-                    )
-                )
-            }
+            val connection = ensureHidConnected(profile, ds4, 6_000L)
+            if (connection.isFailure) return connection
         }
 
         return try {
