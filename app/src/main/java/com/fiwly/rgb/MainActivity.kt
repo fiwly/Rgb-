@@ -13,11 +13,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import android.os.PowerManager
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 class MainActivity:ComponentActivity(){
  private lateinit var status:TextView;private lateinit var preview:View;private lateinit var rgbText:TextView
+ private lateinit var backgroundStatus:TextView
  private lateinit var wheel:ColorWheelView;private lateinit var brightness:SeekBar;private lateinit var slots:LinearLayout
  private lateinit var rSeek:SeekBar;private lateinit var gSeek:SeekBar;private lateinit var bSeek:SeekBar
  private lateinit var rText:TextView;private lateinit var gText:TextView;private lateinit var bText:TextView
@@ -28,7 +32,7 @@ class MainActivity:ComponentActivity(){
  private val ask=registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){updateBluetoothStatus();startKeeperIfReady()}
  override fun onCreate(b:Bundle?){
   super.onCreate(b);setContentView(R.layout.activity_main)
-  status=findViewById(R.id.status);preview=findViewById(R.id.preview);rgbText=findViewById(R.id.rgbText)
+  status=findViewById(R.id.status);preview=findViewById(R.id.preview);rgbText=findViewById(R.id.rgbText);backgroundStatus=findViewById(R.id.backgroundStatus)
   wheel=findViewById(R.id.colorWheel);brightness=findViewById(R.id.brightness);slots=findViewById(R.id.slotsContainer)
   rSeek=findViewById(R.id.rSeek);gSeek=findViewById(R.id.gSeek);bSeek=findViewById(R.id.bSeek);rText=findViewById(R.id.rText);gText=findViewById(R.id.gText);bText=findViewById(R.id.bText)
   transport=AndroidHidHostTransport(this,adapter?:BluetoothAdapter.getDefaultAdapter())
@@ -46,7 +50,9 @@ class MainActivity:ComponentActivity(){
   findViewById<Button>(R.id.connect).setOnClickListener{connectDs4()}
   findViewById<Button>(R.id.apply).setOnClickListener{sendCurrentColor()}
   findViewById<Button>(R.id.setHex).setOnClickListener{setHex(findViewById<EditText>(R.id.hexText))}
-  buildSlots();syncRgbFromWheel();updatePreview();updateBluetoothStatus();startKeeperIfReady()
+  findViewById<Button>(R.id.backgroundSettings).setOnClickListener{openBackgroundSettings()}
+  findViewById<Button>(R.id.batterySettings).setOnClickListener{openBatterySettings()}
+  buildSlots();syncRgbFromWheel();updatePreview();updateBluetoothStatus();updateBackgroundStatus();requestNotificationPermission();startKeeperIfReady()
  }
  private fun connectDs4(){
   if(!permission())return
@@ -104,7 +110,7 @@ class MainActivity:ComponentActivity(){
  }
  private fun k(i:Int,s:String)="slot_"+i+"_"+s
  private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
- private fun permission():Boolean{
+ private fun requestNotificationPermission(){\n  if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){\n   try{requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),9001)}catch(_:Throwable){}\n  }\n }\n private fun openBackgroundSettings(){\n  try{startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName")))}catch(_:Throwable){}\n }\n private fun openBatterySettings(){\n  try{\n   val pm=getSystemService(POWER_SERVICE) as PowerManager\n   if(Build.VERSION.SDK_INT>=23&&!pm.isIgnoringBatteryOptimizations(packageName)){\n    startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,Uri.parse("package:$packageName")))\n   }else startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))\n  }catch(_:Throwable){try{startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))}catch(_:Throwable){}}\n }\n private fun updateBackgroundStatus(){\n  val pm=getSystemService(POWER_SERVICE) as PowerManager\n  val unrestricted=Build.VERSION.SDK_INT<23||pm.isIgnoringBatteryOptimizations(packageName)\n  backgroundStatus.text=if(unrestricted)"✓ Background service ready • Battery unrestricted" else "⚠ Battery optimization is still enabled"\n }\n private fun permission():Boolean{
   if(Build.VERSION.SDK_INT<Build.VERSION_CODES.S)return true
   val c=ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED
   val s=ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED
@@ -121,6 +127,6 @@ class MainActivity:ComponentActivity(){
   status.text=when{adapter==null->"Bluetooth is not available.";adapter?.isEnabled!=true->"Bluetooth is turned off.";else->"Bluetooth ready. Connect the DS4 in Android Bluetooth settings."}
  }
  private fun permissionGranted()=ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED&&ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED
- override fun onResume(){super.onResume();if(::status.isInitialized){updateBluetoothStatus();startKeeperIfReady()}}
+ override fun onResume(){super.onResume();if(::status.isInitialized){updateBluetoothStatus();updateBackgroundStatus();startKeeperIfReady()}}
  override fun onDestroy(){transport.close();super.onDestroy()}
 }
