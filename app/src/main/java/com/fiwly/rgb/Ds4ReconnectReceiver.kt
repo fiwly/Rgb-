@@ -10,7 +10,9 @@ class Ds4ReconnectReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
 
-        val relevant = action == BluetoothDevice.ACTION_ACL_CONNECTED ||
+        val relevant = action == Intent.ACTION_BOOT_COMPLETED ||
+            action == Intent.ACTION_MY_PACKAGE_REPLACED ||
+            action == BluetoothDevice.ACTION_ACL_CONNECTED ||
             action == BluetoothDevice.ACTION_ACL_DISCONNECTED ||
             action == "android.bluetooth.input.profile.action.CONNECTION_STATE_CHANGED" ||
             action == BluetoothDevice.ACTION_BOND_STATE_CHANGED ||
