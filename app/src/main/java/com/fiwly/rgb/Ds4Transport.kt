@@ -16,6 +16,11 @@ class AndroidHidHostTransport(
 ) : Ds4Transport {
     companion object {
         private const val HID_HOST_PROFILE = 4
+        // Hidden/System API values from BluetoothProfile. They are not exposed
+        // in the public SDK, so keep the stable platform values locally.
+        private const val CONNECTION_POLICY_ALLOWED = 100
+        private const val CONNECTION_POLICY_FORBIDDEN = 0
+        private const val CONNECTION_POLICY_UNKNOWN = -1
         private const val CONNECT_TIMEOUT_MS = 15_000L
     }
 
@@ -126,9 +131,9 @@ class AndroidHidHostTransport(
 
         val policy = getConnectionPolicy(p, d)
         val policyText = when (policy) {
-            BluetoothProfile.CONNECTION_POLICY_ALLOWED -> "ALLOWED"
-            BluetoothProfile.CONNECTION_POLICY_FORBIDDEN -> "FORBIDDEN"
-            BluetoothProfile.CONNECTION_POLICY_UNKNOWN -> "UNKNOWN"
+            CONNECTION_POLICY_ALLOWED -> "ALLOWED"
+            CONNECTION_POLICY_FORBIDDEN -> "FORBIDDEN"
+            CONNECTION_POLICY_UNKNOWN -> "UNKNOWN"
             else -> "POLICY($policy)"
         }
 
