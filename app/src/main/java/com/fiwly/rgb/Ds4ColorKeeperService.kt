@@ -19,29 +19,73 @@ class Ds4ColorKeeperService : Service() {
         super.onCreate()
         createChannel()
         startForeground(NOTIFICATION_ID, notification())
+
         val adapter = (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
         if (adapter != null) {
             transport = AndroidHidHostTransport(this, adapter)
-            scope.launch { keepColor() }
+            scope.launch { monitorConnection() }
         }
     }
 
-    private suspend fun keepColor() {
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        return START_STICKY
+    }
+
+    private suspend fun monitorConnection() {
+        var restoreNeeded = true
+        var lastConnected = false
+
         while (scope.isActive) {
             try {
                 val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-                if (prefs.getBoolean("auto_enabled", false)) {
-                    val color = Ds4Color(
-                        prefs.getInt("auto_r", 0),
-                        prefs.getInt("auto_g", 0),
-                        prefs.getInt("auto_b", 0),
-                        100
-                    )
-                    transport?.setLightbar(color)
+                if (!prefs.getBoolean("auto_enabled", false)) {
+                    restoreNeeded = true
+                    lastConnected = false
+                    delay(1500L)
+                    continue
                 }
+
+                val color = Ds4Color(
+                    prefs.getInt("auto_r", 0),
+                    prefs.getInt("auto_g", 0),
+                    prefs.getInt("auto_b", 0),
+                    100
+                )
+
+                val t = transport
+                if (t == null) {
+                    delay(1500L)
+                    continue
+                }
+
+                if (!t.isConnected()) {
+                    restoreNeeded = true
+                    lastConnected = false
+                    t.connect()
+                    delay(1000L)
+                    continue
+                }
+
+                val connectedNow = t.isConnected()
+
+                // Restore only when the DS4 becomes connected again.
+                // Do not continuously overwrite the lightbar while a game is running.
+                if (connectedNow && (!lastConnected || restoreNeeded)) {
+                    val result = t.setLightbar(color)
+                    if (result.isSuccess) {
+                        restoreNeeded = false
+                    } else {
+                        restoreNeeded = true
+                    }
+                }
+
+                lastConnected = connectedNow
+                delay(1000L)
             } catch (_: Throwable) {
+                lastConnected = false
+                restoreNeeded = true
+                delay(1500L)
             }
-            delay(2000L)
         }
     }
 
@@ -52,14 +96,15 @@ class Ds4ColorKeeperService : Service() {
                 "DS4 RGB Keeper",
                 NotificationManager.IMPORTANCE_LOW
             )
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+            getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(channel)
         }
     }
 
     private fun notification(): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("DS4 RGB")
-            .setContentText("Keeping the selected controller color")
+            .setContentText("Auto-restoring DS4 lightbar color")
             .setSmallIcon(android.R.drawable.ic_menu_manage)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
