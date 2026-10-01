@@ -24,7 +24,7 @@ class MainActivity:ComponentActivity(){
  private lateinit var transport:Ds4Transport
  private val prefs by lazy{getSharedPreferences("ds4_rgb_slots",MODE_PRIVATE)}
  private val adapter:BluetoothAdapter? by lazy{(getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter}
- private val ask=registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){updateBluetoothStatus();if(permissionGranted())startAutoRestore()}
+ private val ask=registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){updateBluetoothStatus()}
  override fun onCreate(b:Bundle?){
   super.onCreate(b);setContentView(R.layout.activity_main)
   status=findViewById(R.id.status);preview=findViewById(R.id.preview);rgbText=findViewById(R.id.rgbText)
@@ -54,7 +54,6 @@ class MainActivity:ComponentActivity(){
  }
  private fun sendCurrentColor(){
   if(!permission())return
-  startAutoRestore()
   val c=currentColor()
   persistAutoColor(c)
   lifecycleScope.launch{status.text="Sending RGB "+c.red+", "+c.green+", "+c.blue+"...";val r=transport.setLightbar(c);status.text=r.fold({"Sent RGB "+c.red+", "+c.green+", "+c.blue},{"Send failed: "+(it.message?:it.javaClass.simpleName)})}
