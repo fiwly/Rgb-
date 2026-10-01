@@ -11,6 +11,7 @@ class Ds4ReconnectReceiver : BroadcastReceiver() {
         val action = intent?.action ?: return
 
         val relevant = action == BluetoothDevice.ACTION_ACL_CONNECTED ||
+            action == BluetoothDevice.ACTION_ACL_DISCONNECTED ||
             action == "android.bluetooth.input.profile.action.CONNECTION_STATE_CHANGED" ||
             action == BluetoothDevice.ACTION_BOND_STATE_CHANGED ||
             action == "android.bluetooth.adapter.action.STATE_CHANGED"
@@ -36,8 +37,7 @@ class Ds4ReconnectReceiver : BroadcastReceiver() {
                 Intent(context, Ds4ColorKeeperService::class.java)
             )
         } catch (_: Throwable) {
-            // The service may already be running. MainActivity can also start it
-            // when the user opens the app.
+            // Service may already be running; it will retry internally.
         }
     }
 }
