@@ -12,5 +12,8 @@
 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:text="Brightness" android:textColor="#BDBDBD"/>
 <SeekBar android:id="@+id/brightness" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="100" android:progress="100"/>
 <Button android:id="@+id/apply" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="Apply color"/>
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="26dp" android:text="COLOR SLOTS" android:textColor="#FFFFFF" android:textSize="18sp" android:textStyle="bold"/>
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Save your favorite colors and use them anytime." android:textColor="#9E9E9E" android:textSize="13sp"/>
+<LinearLayout android:id="@+id/slotsContainer" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:orientation="vertical"/>
 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="Android public Bluetooth does not expose raw HID output reports for a paired gamepad. This app keeps the RGB UI and DS4 packet builder separate from the transport layer." android:textColor="#9E9E9E" android:textSize="13sp"/>
 </LinearLayout></ScrollView>
