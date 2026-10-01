@@ -24,7 +24,14 @@ jobs:
           gradle-version: "8.10.2"
 
       - name: Build debug APK
-        run: gradle --no-daemon :app:assembleDebug
+        run: gradle --no-daemon :app:assembleDebug 2>&1 | tee build.log; test ${PIPESTATUS[0]} -eq 0
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
