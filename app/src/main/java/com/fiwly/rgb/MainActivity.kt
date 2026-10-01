@@ -63,7 +63,7 @@ class MainActivity:ComponentActivity(){
  private fun updatePreview(){
   val c=currentColor();preview.setBackgroundColor(Color.rgb(c.red,c.green,c.blue));rgbText.text="RGB "+c.red+", "+c.green+", "+c.blue
   if(::rText.isInitialized){rText.text="R "+c.red;gText.text="G "+c.green;bText.text="B "+c.blue}
-  if(::prefs.isInitialized&&!syncing)persistAutoColor(c)
+  if(!syncing)persistAutoColor(c)
  }
  private fun syncRgbFromWheel(){
   syncing=true
