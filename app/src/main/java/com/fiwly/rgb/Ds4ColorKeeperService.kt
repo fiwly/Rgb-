@@ -58,9 +58,10 @@ class Ds4ColorKeeperService : Service() {
                     100
                 )
 
-                val t = transport ?: run {
+                val t = transport
+                if (t == null) {
                     delay(1500L)
-                    return@run
+                    continue
                 }
 
                 if (!t.isConnected()) {
