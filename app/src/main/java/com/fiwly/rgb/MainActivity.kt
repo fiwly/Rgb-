@@ -45,16 +45,11 @@ class MainActivity:ComponentActivity(){
   findViewById<Button>(R.id.connect).setOnClickListener{connectDs4()}
   findViewById<Button>(R.id.apply).setOnClickListener{sendCurrentColor()}
   findViewById<Button>(R.id.setHex).setOnClickListener{setHex(findViewById<EditText>(R.id.hexText))}
-  buildSlots();syncRgbFromWheel();updatePreview();updateBluetoothStatus();if(permissionGranted())startAutoRestore()
- }
- private fun startAutoRestore(){
-  if(adapter?.isEnabled!=true)return
-  ContextCompat.startForegroundService(this,Intent(this,Ds4RgbService::class.java))
+  buildSlots();syncRgbFromWheel();updatePreview();updateBluetoothStatus()
  }
  private fun connectDs4(){
   if(!permission())return
   if(adapter?.isEnabled!=true){status.text="Bluetooth is turned off.";return}
-  startAutoRestore()
   lifecycleScope.launch{status.text="Connecting to Android HID Host...";val r=transport.connect();status.text=r.fold({"DS4 connected through "+transport.name},{"HID Host: "+(it.message?:it.javaClass.simpleName)})}
  }
  private fun sendCurrentColor(){
