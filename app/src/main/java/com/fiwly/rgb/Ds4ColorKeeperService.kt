@@ -32,15 +32,21 @@ class Ds4ColorKeeperService : Service() {
     }
 
     private suspend fun monitorConnection() {
-        var restoreNeeded = true
         var lastConnected = false
+        var restoreNeeded = true
+        var startupGrace = true
+
+        // Give Android/HyperOS time to finish rebuilding the DS4 HID connection
+        // after Bluetooth is enabled or the controller is powered on.
+        delay(3500L)
+        startupGrace = false
 
         while (scope.isActive) {
             try {
                 val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
                 if (!prefs.getBoolean("auto_enabled", false)) {
-                    restoreNeeded = true
                     lastConnected = false
+                    restoreNeeded = true
                     delay(1500L)
                     continue
                 }
@@ -52,39 +58,47 @@ class Ds4ColorKeeperService : Service() {
                     100
                 )
 
-                val t = transport
-                if (t == null) {
+                val t = transport ?: run {
                     delay(1500L)
-                    continue
+                    return@run
                 }
 
                 if (!t.isConnected()) {
-                    restoreNeeded = true
                     lastConnected = false
+                    restoreNeeded = true
+
+                    // Request a fresh HID Host proxy. Retry every few seconds until
+                    // Android exposes the DS4 as connected.
                     t.connect()
-                    delay(1000L)
+                    delay(1800L)
                     continue
                 }
 
                 val connectedNow = t.isConnected()
 
-                // Restore only when the DS4 becomes connected again.
-                // Do not continuously overwrite the lightbar while a game is running.
                 if (connectedNow && (!lastConnected || restoreNeeded)) {
-                    val result = t.setLightbar(color)
-                    if (result.isSuccess) {
-                        restoreNeeded = false
-                    } else {
-                        restoreNeeded = true
+                    // HID can report CONNECTED a little before the controller is
+                    // ready for output. Retry the actual RGB report several times,
+                    // but only during a reconnect/restore event.
+                    var restored = false
+                    repeat(8) {
+                        if (!scope.isActive || !t.isConnected()) return@repeat
+                        val result = t.setLightbar(color)
+                        if (result.isSuccess) {
+                            restored = true
+                            return@repeat
+                        }
+                        delay(1500L)
                     }
+                    restoreNeeded = !restored
                 }
 
                 lastConnected = connectedNow
-                delay(1000L)
+                delay(1200L)
             } catch (_: Throwable) {
                 lastConnected = false
                 restoreNeeded = true
-                delay(1500L)
+                delay(2000L)
             }
         }
     }
