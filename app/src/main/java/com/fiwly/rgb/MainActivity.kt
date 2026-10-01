@@ -1,7 +1,7 @@
 package com.fiwly.rgb
 
 import android.Manifest
-import android.app.Activity
+import androidx.activity.ComponentActivity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.pm.PackageManager
@@ -15,7 +15,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     private lateinit var status: TextView
     private lateinit var preview: View
     private lateinit var rgbText: TextView
