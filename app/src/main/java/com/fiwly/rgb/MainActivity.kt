@@ -24,7 +24,7 @@ class MainActivity:ComponentActivity(){
  private lateinit var transport:Ds4Transport
  private val prefs by lazy{getSharedPreferences("ds4_rgb_slots",MODE_PRIVATE)}
  private val adapter:BluetoothAdapter? by lazy{(getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter}
- private val ask=registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){updateBluetoothStatus()}
+ private val ask=registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){updateBluetoothStatus();if(permissionGranted())startAutoRestore()}
  override fun onCreate(b:Bundle?){
   super.onCreate(b);setContentView(R.layout.activity_main)
   status=findViewById(R.id.status);preview=findViewById(R.id.preview);rgbText=findViewById(R.id.rgbText)
@@ -45,9 +45,9 @@ class MainActivity:ComponentActivity(){
   findViewById<Button>(R.id.connect).setOnClickListener{connectDs4()}
   findViewById<Button>(R.id.apply).setOnClickListener{sendCurrentColor()}
   findViewById<Button>(R.id.setHex).setOnClickListener{setHex(findViewById<EditText>(R.id.hexText))}
-  buildSlots();updatePreview();updateBluetoothStatus()
+  buildSlots();syncRgbFromWheel();updatePreview();updateBluetoothStatus();if(permissionGranted())startAutoRestore()
  }
- private fun connectDs4(){
+ private fun startAutoRestore(){\n  if(adapter?.isEnabled!=true)return\n  ContextCompat.startForegroundService(this,Intent(this,Ds4RgbService::class.java))\n }\n private fun connectDs4(){
   if(!permission())return
   if(adapter?.isEnabled!=true){status.text="Bluetooth is turned off.";return}
   lifecycleScope.launch{status.text="Connecting to Android HID Host...";val r=transport.connect();status.text=r.fold({"DS4 connected through "+transport.name},{"HID Host: "+(it.message?:it.javaClass.simpleName)})}
@@ -56,10 +56,10 @@ class MainActivity:ComponentActivity(){
   if(!permission())return
   val c=currentColor();lifecycleScope.launch{status.text="Sending RGB "+c.red+", "+c.green+", "+c.blue+"...";val r=transport.setLightbar(c);status.text=r.fold({"Sent RGB "+c.red+", "+c.green+", "+c.blue},{"Send failed: "+(it.message?:it.javaClass.simpleName)})}
  }
- private fun currentColor():Ds4Color{val rgb=Color.HSVToColor(wheel.hsv);return Ds4Color(Color.red(rgb),Color.green(rgb),Color.blue(rgb),brightness.progress).scaled()}
+ private fun persistAutoColor(c:Ds4Color){prefs.edit().putInt("auto_r",c.red).putInt("auto_g",c.green).putInt("auto_b",c.blue).putBoolean("auto_enabled",true).apply()}\n private fun currentColor():Ds4Color{val rgb=Color.HSVToColor(wheel.hsv);return Ds4Color(Color.red(rgb),Color.green(rgb),Color.blue(rgb),brightness.progress).scaled()}
  private fun updatePreview(){
   val c=currentColor();preview.setBackgroundColor(Color.rgb(c.red,c.green,c.blue));rgbText.text="RGB "+c.red+", "+c.green+", "+c.blue
-  if(::rText.isInitialized){rText.text="R "+c.red;gText.text="G "+c.green;bText.text="B "+c.blue}
+  if(::rText.isInitialized){rText.text="R "+c.red;gText.text="G "+c.green;bText.text="B "+c.blue}\n  if(::prefs.isInitialized&&!syncing)persistAutoColor(c)
  }
  private fun syncRgbFromWheel(){
   syncing=true
@@ -111,6 +111,6 @@ class MainActivity:ComponentActivity(){
   status.text=when{adapter==null->"Bluetooth is not available.";adapter?.isEnabled!=true->"Bluetooth is turned off.";else->"Bluetooth ready. Connect the DS4 in Android Bluetooth settings."}
  }
  private fun permissionGranted()=ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED&&ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED
- override fun onResume(){super.onResume();if(::status.isInitialized)updateBluetoothStatus()}
+ override fun onResume(){super.onResume();if(::status.isInitialized){updateBluetoothStatus();if(permissionGranted())startAutoRestore()}}
  override fun onDestroy(){transport.close();super.onDestroy()}
 }
