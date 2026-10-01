@@ -3,10 +3,11 @@ package com.fiwly.rgb
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
-import java.lang.reflect.Method
+import java.lang.reflect.InvocationTargetException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
+import org.lsposed.hiddenapibypass.HiddenApiBypass
 
 class AndroidHidHostTransport(
     private val context: android.content.Context,
@@ -148,57 +149,38 @@ class AndroidHidHostTransport(
                 "%02x".format(it.toInt() and 0xFF)
             }
 
+            val hostClass = Class.forName("android.bluetooth.BluetoothHidHost")
             val attempts = mutableListOf<String>()
-            val hostClass = try {
-                Class.forName("android.bluetooth.BluetoothHidHost")
-            } catch (_: Throwable) {
-                null
+
+            try {
+                val value = HiddenApiBypass.invoke(
+                    hostClass,
+                    p,
+                    "sendData",
+                    d,
+                    hex
+                ) as? Boolean
+
+                attempts += "BluetoothHidHost.sendData(2)=$value"
+                if (value == true) return Result.success(Unit)
+            } catch (t: Throwable) {
+                attempts += "BluetoothHidHost.sendData(2) threw ${shortError(t)}"
             }
 
-            val candidates = buildList {
-                if (hostClass != null) add(hostClass)
-                add(p.javaClass)
-            }.distinct()
-
-            for (clazz in candidates) {
-                val send = findMethod(
-                    clazz,
-                    "sendData",
-                    BluetoothDevice::class.java,
-                    String::class.java
-                )
-
-                if (send != null) {
-                    try {
-                        val value = invokeBoolean(p, send, d, hex)
-                        attempts += "${clazz.name}.sendData(2)=$value"
-                        if (value) return Result.success(Unit)
-                    } catch (t: Throwable) {
-                        attempts += "${clazz.name}.sendData(2) threw ${shortError(t)}"
-                    }
-                } else {
-                    attempts += "${clazz.name}.sendData(2)=not-found"
-                }
-
-                val setReport = findMethod(
-                    clazz,
+            try {
+                val value = HiddenApiBypass.invoke(
+                    hostClass,
+                    p,
                     "setReport",
-                    BluetoothDevice::class.java,
-                    Byte::class.javaPrimitiveType!!,
-                    String::class.java
-                )
+                    d,
+                    0x02.toByte(),
+                    hex
+                ) as? Boolean
 
-                if (setReport != null) {
-                    try {
-                        val value = invokeBoolean(p, setReport, d, 0x02.toByte(), hex)
-                        attempts += "${clazz.name}.setReport(3)=$value"
-                        if (value) return Result.success(Unit)
-                    } catch (t: Throwable) {
-                        attempts += "${clazz.name}.setReport(3) threw ${shortError(t)}"
-                    }
-                } else {
-                    attempts += "${clazz.name}.setReport(3)=not-found"
-                }
+                attempts += "BluetoothHidHost.setReport(3)=$value"
+                if (value == true) return Result.success(Unit)
+            } catch (t: Throwable) {
+                attempts += "BluetoothHidHost.setReport(3) threw ${shortError(t)}"
             }
 
             Result.failure<Unit>(
@@ -241,32 +223,11 @@ class AndroidHidHostTransport(
         else -> "UNKNOWN($state)"
     }
 
-    private fun findMethod(
-        clazz: Class<*>,
-        name: String,
-        vararg parameterTypes: Class<*>
-    ): Method? {
-        return try {
-            clazz.getDeclaredMethod(name, *parameterTypes).also {
-                it.isAccessible = true
-            }
-        } catch (_: Throwable) {
-            try {
-                clazz.methods.firstOrNull {
-                    it.name == name && it.parameterTypes.contentEquals(parameterTypes)
-                }
-            } catch (_: Throwable) {
-                null
-            }
-        }
-    }
-
-    private fun invokeBoolean(target: Any, method: Method, vararg args: Any): Boolean {
-        return (method.invoke(target, *args) as? Boolean) == true
-    }
-
     private fun shortError(t: Throwable): String {
-        val root = t.cause ?: t
+        val root = when (t) {
+            is InvocationTargetException -> t.targetException ?: t
+            else -> t.cause ?: t
+        }
         return root.javaClass.simpleName + ":" + (root.message ?: "no-message")
     }
 
