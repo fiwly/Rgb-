@@ -34,13 +34,9 @@ class Ds4ColorKeeperService : Service() {
     private suspend fun monitorConnection() {
         var lastConnected = false
         var restoreNeeded = true
-        var startupGrace = true
 
-        // Give Android/HyperOS time to finish rebuilding the DS4 HID connection
-        // after Bluetooth is enabled or the controller is powered on.
-        delay(3500L)
-        startupGrace = false
-
+        // No fixed startup delay. Bluetooth receiver events already start/wake
+        // this service, so a fixed delay only makes RGB restore feel slow.
         while (scope.isActive) {
             try {
                 val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
@@ -71,14 +67,14 @@ class Ds4ColorKeeperService : Service() {
                     // Keep the HID Host proxy alive. Repeatedly closing/recreating
                     // it can race Android's Bluetooth HID service on reconnect.
                     var reconnected = false
-                    repeat(20) {
+                    repeat(4) {
                         if (!scope.isActive) return@repeat
                         val result = t.connect()
                         if (result.isSuccess && t.isConnected()) {
                             reconnected = true
                             return@repeat
                         }
-                        delay(1500L)
+                        delay(500L)
                     }
 
                     if (!reconnected) {
@@ -89,9 +85,9 @@ class Ds4ColorKeeperService : Service() {
                         if (rawRestore.isSuccess) {
                             restoreNeeded = false
                             lastConnected = false
-                            delay(2500L)
+                            delay(500L)
                         } else {
-                            delay(3000L)
+                            delay(1000L)
                         }
                     }
                     continue
@@ -107,20 +103,20 @@ class Ds4ColorKeeperService : Service() {
                     // Give the controller/HID output channel a longer window after
                     // reconnect. This is only active during a restore event, so it
                     // does not fight games while the controller remains connected.
-                    repeat(16) {
+                    repeat(5) {
                         if (!scope.isActive || !t.isConnected()) return@repeat
                         val result = t.setLightbar(color)
                         if (result.isSuccess) {
                             restored = true
                             return@repeat
                         }
-                        delay(1000L)
+                        delay(300L)
                     }
                     restoreNeeded = !restored
                 }
 
                 lastConnected = connectedNow
-                delay(1200L)
+                delay(500L)
             } catch (_: Throwable) {
                 lastConnected = false
                 restoreNeeded = true
