@@ -168,9 +168,9 @@ class AndroidHidHostTransport(
         return try {
             val hostClass = Class.forName("android.bluetooth.BluetoothHidHost")
             (HiddenApiBypass.invoke(hostClass, p, "getConnectionPolicy", d) as? Int)
-                ?: BluetoothProfile.CONNECTION_POLICY_UNKNOWN
+                ?: CONNECTION_POLICY_UNKNOWN
         } catch (_: Throwable) {
-            BluetoothProfile.CONNECTION_POLICY_UNKNOWN
+            CONNECTION_POLICY_UNKNOWN
         }
     }
 
@@ -182,7 +182,7 @@ class AndroidHidHostTransport(
                 p,
                 "setConnectionPolicy",
                 d,
-                BluetoothProfile.CONNECTION_POLICY_ALLOWED
+                CONNECTION_POLICY_ALLOWED
             ) as? Boolean) ?: false
         } catch (_: SecurityException) {
             null
