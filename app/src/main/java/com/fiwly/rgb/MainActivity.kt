@@ -1,308 +1,94 @@
 package com.fiwly.rgb
 
 import android.Manifest
-import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothManager
+import android.bluetooth.*
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
 import android.widget.*
+import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
-    private lateinit var status: TextView
-    private lateinit var preview: View
-    private lateinit var rgbText: TextView
-    private lateinit var transport: Ds4Transport
-    private lateinit var redBar: SeekBar
-    private lateinit var greenBar: SeekBar
-    private lateinit var blueBar: SeekBar
-    private lateinit var brightnessBar: SeekBar
-    private lateinit var slotsContainer: LinearLayout
-
-    private val preferences by lazy {
-        getSharedPreferences("ds4_rgb_slots", MODE_PRIVATE)
-    }
-
-    private val slotCount = 8
-
-    private val btAdapter: BluetoothAdapter? by lazy {
-        (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
-    }
-
-    private val bluetoothPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-            val connectGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-                result[Manifest.permission.BLUETOOTH_CONNECT] == true ||
-                hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
-            val scanGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-                result[Manifest.permission.BLUETOOTH_SCAN] == true ||
-                hasPermission(Manifest.permission.BLUETOOTH_SCAN)
-            if (connectGranted && scanGranted) updateBluetoothStatus()
-            else status.text = "Bluetooth permission denied. Open App info > Permissions and allow Nearby devices."
-        }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        status = findViewById(R.id.status)
-        preview = findViewById(R.id.preview)
-        rgbText = findViewById(R.id.rgbText)
-        slotsContainer = findViewById(R.id.slotsContainer)
-
-        val adapter = btAdapter ?: BluetoothAdapter.getDefaultAdapter()
-        transport = AndroidHidHostTransport(this, adapter)
-
-        val connect = findViewById<Button>(R.id.connect)
-        val apply = findViewById<Button>(R.id.apply)
-        redBar = findViewById(R.id.red)
-        greenBar = findViewById(R.id.green)
-        blueBar = findViewById(R.id.blue)
-        brightnessBar = findViewById(R.id.brightness)
-
-        listOf(redBar, greenBar, blueBar, brightnessBar).forEach { seekBar ->
-            seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(s: SeekBar?, value: Int, fromUser: Boolean) {
-                    updatePreview(
-                        redBar.progress,
-                        greenBar.progress,
-                        blueBar.progress,
-                        brightnessBar.progress
-                    )
-                }
-                override fun onStartTrackingTouch(s: SeekBar?) = Unit
-                override fun onStopTrackingTouch(s: SeekBar?) = Unit
-            })
-        }
-
-        connect.setOnClickListener {
-            if (!ensureBluetoothPermission()) return@setOnClickListener
-            if (btAdapter?.isEnabled != true) {
-                status.text = "Bluetooth is turned off. Turn it on and try again."
-                return@setOnClickListener
-            }
-            lifecycleScope.launch {
-                status.text = "Connecting to Android HID Host..."
-                val result = transport.connect()
-                status.text = result.fold(
-                    { "DS4 connected through " + transport.name },
-                    { "HID Host: " + (it.message ?: it.javaClass.simpleName) }
-                )
-            }
-        }
-
-        apply.setOnClickListener {
-            sendCurrentColor()
-        }
-
-        buildSlots()
-        updatePreview(
-            redBar.progress,
-            greenBar.progress,
-            blueBar.progress,
-            brightnessBar.progress
-        )
-        updateBluetoothStatus()
-    }
-
-    private fun sendCurrentColor() {
-        if (!ensureBluetoothPermission()) return
-
-        val c = currentColor()
-        lifecycleScope.launch {
-            status.text = "Sending RGB " + c.red + ", " + c.green + ", " + c.blue + "..."
-            val result = transport.setLightbar(c)
-            status.text = result.fold(
-                { "Sent RGB " + c.red + ", " + c.green + ", " + c.blue },
-                { "Send failed: " + (it.message ?: it.javaClass.simpleName) }
-            )
-        }
-    }
-
-    private fun currentColor(): Ds4Color =
-        Ds4Color(
-            redBar.progress,
-            greenBar.progress,
-            blueBar.progress,
-            brightnessBar.progress
-        ).scaled()
-
-    private fun buildSlots() {
-        slotsContainer.removeAllViews()
-
-        for (index in 0 until slotCount) {
-            val slotNumber = index + 1
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(0, 8, 0, 8)
-            }
-
-            val colorView = View(this).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply {
-                    marginEnd = dp(12)
-                }
-            }
-
-            val name = TextView(this).apply {
-                text = "Slot " + slotNumber
-                textSize = 16f
-                setTextColor(Color.WHITE)
-                layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply {
-                    gravity = android.view.Gravity.CENTER_VERTICAL
-                }
-            }
-
-            val use = Button(this).apply {
-                text = "Use"
-                isAllCaps = false
-                setOnClickListener {
-                    if (loadSlot(index)) sendCurrentColor()
-                }
-            }
-
-            val save = Button(this).apply {
-                text = "Save"
-                isAllCaps = false
-                setOnClickListener {
-                    saveSlot(index)
-                    refreshSlotPreviews()
-                    status.text = "Saved current color to Slot " + slotNumber
-                }
-            }
-
-            row.addView(colorView)
-            row.addView(name)
-            row.addView(use, LinearLayout.LayoutParams(dp(72), dp(48)).apply {
-                marginStart = dp(4)
-            })
-            row.addView(save, LinearLayout.LayoutParams(dp(72), dp(48)).apply {
-                marginStart = dp(4)
-            })
-            slotsContainer.addView(row)
-        }
-
-        refreshSlotPreviews()
-    }
-
-    private fun saveSlot(index: Int) {
-        val c = Ds4Color(
-            redBar.progress,
-            greenBar.progress,
-            blueBar.progress,
-            brightnessBar.progress
-        )
-
-        preferences.edit()
-            .putInt(key(index, "r"), c.red)
-            .putInt(key(index, "g"), c.green)
-            .putInt(key(index, "b"), c.blue)
-            .putInt(key(index, "brightness"), c.brightness)
-            .putBoolean(key(index, "saved"), true)
-            .apply()
-    }
-
-    private fun loadSlot(index: Int): Boolean {
-        if (!preferences.getBoolean(key(index, "saved"), false)) {
-            status.text = "Slot " + (index + 1) + " is empty. Save a color to it first."
-            return false
-        }
-
-        redBar.progress = preferences.getInt(key(index, "r"), 0)
-        greenBar.progress = preferences.getInt(key(index, "g"), 0)
-        blueBar.progress = preferences.getInt(key(index, "b"), 0)
-        brightnessBar.progress = preferences.getInt(key(index, "brightness"), 100)
-
-        updatePreview(
-            redBar.progress,
-            greenBar.progress,
-            blueBar.progress,
-            brightnessBar.progress
-        )
-        status.text = "Loaded Slot " + (index + 1)
-        return true
-    }
-
-    private fun refreshSlotPreviews() {
-        for (index in 0 until slotsContainer.childCount) {
-            val row = slotsContainer.getChildAt(index) as LinearLayout
-            val colorView = row.getChildAt(0)
-            val saved = preferences.getBoolean(key(index, "saved"), false)
-
-            if (!saved) {
-                colorView.setBackgroundColor(Color.rgb(55, 55, 62))
-                continue
-            }
-
-            val c = Ds4Color(
-                preferences.getInt(key(index, "r"), 0),
-                preferences.getInt(key(index, "g"), 0),
-                preferences.getInt(key(index, "b"), 0),
-                preferences.getInt(key(index, "brightness"), 100)
-            ).scaled()
-
-            colorView.setBackgroundColor(Color.rgb(c.red, c.green, c.blue))
-        }
-    }
-
-    private fun key(index: Int, suffix: String): String =
-        "slot_" + index + "_" + suffix
-
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
-
-    private fun ensureBluetoothPermission(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
-        val connect = hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
-        val scan = hasPermission(Manifest.permission.BLUETOOTH_SCAN)
-        if (connect && scan) return true
-        status.text = "Requesting Nearby devices permission..."
-        bluetoothPermissionLauncher.launch(arrayOf(
-            Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.BLUETOOTH_SCAN
-        ))
-        return false
-    }
-
-    private fun hasPermission(permission: String): Boolean =
-        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
-
-    private fun updateBluetoothStatus() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val connect = hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
-            val scan = hasPermission(Manifest.permission.BLUETOOTH_SCAN)
-            if (!connect || !scan) {
-                status.text = "Nearby devices permission is required. Press Connect or Apply."
-                return
-            }
-        }
-        val adapter = btAdapter
-        status.text = when {
-            adapter == null -> "Bluetooth is not available on this device."
-            !adapter.isEnabled -> "Bluetooth is turned off. Turn it on and try again."
-            else -> "Bluetooth ready. Make sure DualShock 4 is connected in Android Bluetooth settings."
-        }
-    }
-
-    private fun updatePreview(r: Int, g: Int, b: Int, brightness: Int) {
-        val c = Ds4Color(r, g, b, brightness).scaled()
-        preview.setBackgroundColor(Color.rgb(c.red, c.green, c.blue))
-        rgbText.text = "RGB " + c.red + ", " + c.green + ", " + c.blue
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (::status.isInitialized) updateBluetoothStatus()
-    }
-
-    override fun onDestroy() {
-        transport.close()
-        super.onDestroy()
-    }
+class MainActivity:ComponentActivity(){
+ private lateinit var status:TextView;private lateinit var preview:View;private lateinit var rgbText:TextView
+ private lateinit var wheel:ColorWheelView;private lateinit var brightness:SeekBar;private lateinit var slots:LinearLayout
+ private lateinit var transport:Ds4Transport
+ private val prefs by lazy{getSharedPreferences("ds4_rgb_slots",MODE_PRIVATE)}
+ private val adapter:BluetoothAdapter? by lazy{(getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter}
+ private val ask=registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){updateBluetoothStatus()}
+ override fun onCreate(b:Bundle?){
+  super.onCreate(b);setContentView(R.layout.activity_main)
+  status=findViewById(R.id.status);preview=findViewById(R.id.preview);rgbText=findViewById(R.id.rgbText)
+  wheel=findViewById(R.id.colorWheel);brightness=findViewById(R.id.brightness);slots=findViewById(R.id.slotsContainer)
+  transport=AndroidHidHostTransport(this,adapter?:BluetoothAdapter.getDefaultAdapter())
+  wheel.onColorChanged={updatePreview()};brightness.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
+   override fun onProgressChanged(s:SeekBar?,p:Int,f:Boolean){updatePreview()}
+   override fun onStartTrackingTouch(s:SeekBar?){};override fun onStopTrackingTouch(s:SeekBar?){}
+  })
+  findViewById<Button>(R.id.connect).setOnClickListener{connectDs4()}
+  findViewById<Button>(R.id.apply).setOnClickListener{sendCurrentColor()}
+  findViewById<Button>(R.id.setHex).setOnClickListener{setHex(findViewById<EditText>(R.id.hexText))}
+  buildSlots();updatePreview();updateBluetoothStatus()
+ }
+ private fun connectDs4(){
+  if(!permission())return
+  if(adapter?.isEnabled!=true){status.text="Bluetooth is turned off.";return}
+  lifecycleScope.launch{status.text="Connecting to Android HID Host...";val r=transport.connect();status.text=r.fold({"DS4 connected through "+transport.name},{"HID Host: "+(it.message?:it.javaClass.simpleName)})}
+ }
+ private fun sendCurrentColor(){
+  if(!permission())return
+  val c=currentColor();lifecycleScope.launch{status.text="Sending RGB "+c.red+", "+c.green+", "+c.blue+"...";val r=transport.setLightbar(c);status.text=r.fold({"Sent RGB "+c.red+", "+c.green+", "+c.blue},{"Send failed: "+(it.message?:it.javaClass.simpleName)})}
+ }
+ private fun currentColor():Ds4Color{val rgb=Color.HSVToColor(wheel.hsv);return Ds4Color(Color.red(rgb),Color.green(rgb),Color.blue(rgb),brightness.progress).scaled()}
+ private fun updatePreview(){
+  val c=currentColor();preview.setBackgroundColor(Color.rgb(c.red,c.green,c.blue));rgbText.text="RGB "+c.red+", "+c.green+", "+c.blue
+ }
+ private fun setHex(e:EditText){
+  try{val s=e.text.toString().trim().removePrefix("#");if(s.length!=6)throw IllegalArgumentException();val rgb=Color.parseColor("#"+s);val h=FloatArray(3);Color.colorToHSV(rgb,h);wheel.hsv=h;updatePreview();status.text="Color set to #"+s.uppercase()}
+  catch(_:Throwable){status.text="Enter a valid HEX color, for example #7C4DFF"}
+ }
+ private fun buildSlots(){
+  slots.removeAllViews()
+  for(i in 0 until 8){
+   val n=i+1;val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
+   val swatch=View(this).apply{layoutParams=LinearLayout.LayoutParams(dp(44),dp(44)).apply{marginEnd=dp(10)}}
+   val name=TextView(this).apply{text="Slot "+n;textSize=16f;setTextColor(Color.WHITE);layoutParams=LinearLayout.LayoutParams(0,dp(52),1f)}
+   val use=Button(this).apply{text="Use";isAllCaps=false;setOnClickListener{if(load(i))sendCurrentColor()}}
+   val save=Button(this).apply{text="Save";isAllCaps=false;setOnClickListener{save(i);refreshSlots();status.text="Saved current color to Slot "+n}}
+   row.addView(swatch);row.addView(name);row.addView(use,LinearLayout.LayoutParams(dp(70),dp(52)));row.addView(save,LinearLayout.LayoutParams(dp(70),dp(52)));slots.addView(row)
+  };refreshSlots()
+ }
+ private fun save(i:Int){
+  val rgb=Color.HSVToColor(wheel.hsv);val c=Ds4Color(Color.red(rgb),Color.green(rgb),Color.blue(rgb),brightness.progress)
+  prefs.edit().putInt(k(i,"r"),c.red).putInt(k(i,"g"),c.green).putInt(k(i,"b"),c.blue).putInt(k(i,"br"),c.brightness).putBoolean(k(i,"ok"),true).apply()
+ }
+ private fun load(i:Int):Boolean{
+  if(!prefs.getBoolean(k(i,"ok"),false)){status.text="Slot "+(i+1)+" is empty.";return false}
+  val rgb=Color.rgb(prefs.getInt(k(i,"r"),0),prefs.getInt(k(i,"g"),0),prefs.getInt(k(i,"b"),0));val h=FloatArray(3);Color.colorToHSV(rgb,h);wheel.hsv=h;brightness.progress=prefs.getInt(k(i,"br"),100);updatePreview();status.text="Loaded Slot "+(i+1);return true
+ }
+ private fun refreshSlots(){
+  for(i in 0 until slots.childCount){val v=(slots.getChildAt(i) as LinearLayout).getChildAt(0);if(!prefs.getBoolean(k(i,"ok"),false))v.setBackgroundColor(Color.DKGRAY)else{val rgb=Color.rgb(prefs.getInt(k(i,"r"),0),prefs.getInt(k(i,"g"),0),prefs.getInt(k(i,"b"),0));val br=prefs.getInt(k(i,"br"),100);v.setBackgroundColor(Color.rgb(Color.red(rgb)*br/100,Color.green(rgb)*br/100,Color.blue(rgb)*br/100))}}
+ }
+ private fun k(i:Int,s:String)="slot_"+i+"_"+s
+ private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
+ private fun permission():Boolean{
+  if(Build.VERSION.SDK_INT<Build.VERSION_CODES.S)return true
+  val c=ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED
+  val s=ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED
+  if(c&&s)return true
+  ask.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT,Manifest.permission.BLUETOOTH_SCAN));return false
+ }
+ private fun updateBluetoothStatus(){
+  if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S&&!permissionGranted()){status.text="Allow Nearby devices permission.";return}
+  status.text=when{adapter==null->"Bluetooth is not available.";adapter?.isEnabled!=true->"Bluetooth is turned off.";else->"Bluetooth ready. Connect the DS4 in Android Bluetooth settings."}
+ }
+ private fun permissionGranted()=ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED&&ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED
+ override fun onResume(){super.onResume();if(::status.isInitialized)updateBluetoothStatus()}
+ override fun onDestroy(){transport.close();super.onDestroy()}
 }
