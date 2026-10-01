@@ -26,7 +26,8 @@ class AndroidHidHostTransport(
         private const val CONNECTION_POLICY_UNKNOWN = -1
         private const val HID_CONTROL_PSM = 0x11
         private const val HID_INTERRUPT_PSM = 0x13
-        private const val CONNECT_TIMEOUT_MS = 15_000L
+        private const val CONNECT_TIMEOUT_MS = 3_000L
+        private const val RESTORE_CONNECT_TIMEOUT_MS = 1_500L
     }
 
     override val name = "Android HID Host"
@@ -257,13 +258,15 @@ class AndroidHidHostTransport(
         }
 
         if (state != BluetoothProfile.STATE_CONNECTED) {
-            val connection = ensureHidConnected(profile, ds4, 6_000L)
+            // Try native HID L2CAP first. This avoids waiting on a stale HID Host
+            // state when the controller's classic Bluetooth link is already ready.
+            val raw = rawL2capLightbar(ds4, color)
+            if (raw.isSuccess) return raw
+
+            // Give Android HID Host only a short window so a color change does
+            // not block for several seconds when the system HID profile is down.
+            val connection = ensureHidConnected(profile, ds4, RESTORE_CONNECT_TIMEOUT_MS)
             if (connection.isFailure) {
-                // Android 16/HyperOS protects BluetoothHidHost.connect() with
-                // BLUETOOTH_PRIVILEGED. Fall back to the DS4's native classic
-                // Bluetooth HID L2CAP channels; no root or USB is required.
-                val raw = rawL2capLightbar(ds4, color)
-                if (raw.isSuccess) return raw
                 return Result.failure(
                     IllegalStateException(
                         connection.exceptionOrNull()?.message +
