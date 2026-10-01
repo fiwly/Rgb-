@@ -68,13 +68,10 @@ class Ds4ColorKeeperService : Service() {
                     lastConnected = false
                     restoreNeeded = true
 
-                    // HyperOS can leave the old HID Host proxy alive after Bluetooth
-                    // toggles. Drop that proxy first, then request a completely fresh
-                    // HID Host connection.
-                    t.close()
-
+                    // Keep the HID Host proxy alive. Repeatedly closing/recreating
+                    // it can race Android's Bluetooth HID service on reconnect.
                     var reconnected = false
-                    repeat(12) {
+                    repeat(20) {
                         if (!scope.isActive) return@repeat
                         val result = t.connect()
                         if (result.isSuccess && t.isConnected()) {
@@ -84,7 +81,7 @@ class Ds4ColorKeeperService : Service() {
                         delay(1500L)
                     }
 
-                    if (!reconnected) delay(2500L)
+                    if (!reconnected) delay(3000L)
                     continue
                 }
 
@@ -95,14 +92,17 @@ class Ds4ColorKeeperService : Service() {
                     // ready for output. Retry the actual RGB report several times,
                     // but only during a reconnect/restore event.
                     var restored = false
-                    repeat(8) {
+                    // Give the controller/HID output channel a longer window after
+                    // reconnect. This is only active during a restore event, so it
+                    // does not fight games while the controller remains connected.
+                    repeat(16) {
                         if (!scope.isActive || !t.isConnected()) return@repeat
                         val result = t.setLightbar(color)
                         if (result.isSuccess) {
                             restored = true
                             return@repeat
                         }
-                        delay(1500L)
+                        delay(1000L)
                     }
                     restoreNeeded = !restored
                 }
