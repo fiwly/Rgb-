@@ -115,6 +115,6 @@ class MainActivity:ComponentActivity(){
   status.text=when{adapter==null->"Bluetooth is not available.";adapter?.isEnabled!=true->"Bluetooth is turned off.";else->"Bluetooth ready. Connect the DS4 in Android Bluetooth settings."}
  }
  private fun permissionGranted()=ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED&&ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED
- override fun onResume(){super.onResume();if(::status.isInitialized){updateBluetoothStatus();if(permissionGranted())startAutoRestore()}}
+ override fun onResume(){super.onResume();if(::status.isInitialized){updateBluetoothStatus()}}
  override fun onDestroy(){transport.close();super.onDestroy()}
 }
