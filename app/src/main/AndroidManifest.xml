@@ -23,6 +23,7 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.input.profile.action.CONNECTION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
     </application>
