@@ -4,8 +4,8 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
 import java.lang.reflect.Method
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 /**
  * Attempts to use Android's built-in HID Host profile through its hidden
@@ -21,43 +21,37 @@ class AndroidHidHostTransport(private val context: android.content.Context, priv
     private var device: BluetoothDevice? = null
     private var listener: BluetoothProfile.ServiceListener? = null
 
-    override suspend fun connect(): Result<Unit> {
+    override suspend fun connect(): Result<Unit> = suspendCancellableCoroutine { cont ->
         try {
-            val latch = CountDownLatch(1)
             val l = object : BluetoothProfile.ServiceListener {
                 override fun onServiceConnected(profile: Int, p: BluetoothProfile) {
                     proxy = p
-                    latch.countDown()
+                    val ds4 = try {
+                        adapter.bondedDevices.firstOrNull {
+                            val n = it.name ?: ""
+                            n.contains("Wireless Controller", ignoreCase = true) ||
+                                n.contains("DUALSHOCK", ignoreCase = true)
+                        }
+                    } catch (t: Throwable) {
+                        null
+                    }
+                    if (ds4 == null) {
+                        cont.resume(Result.failure(IllegalStateException("Pair the DS4 first")))
+                    } else {
+                        device = ds4
+                        cont.resume(Result.success(Unit))
+                    }
                 }
                 override fun onServiceDisconnected(profile: Int) {
                     proxy = null
                 }
             }
             listener = l
-
-            // BluetoothProfile.HID_HOST is hidden in the SDK; AOSP assigns it
-            // profile id 4. We keep the value local so this project compiles
-            // against the public SDK.
-            val ok = adapter.getProfileProxy(
-                context,
-                l,
-                4
-            )
-            if (!ok) return Result.failure(IllegalStateException("HID Host profile is unavailable"))
-
-            if (!latch.await(5, TimeUnit.SECONDS)) return Result.failure(IllegalStateException("HID Host service did not connect"))
-            val bonded = adapter.bondedDevices
-            val ds4 = bonded.firstOrNull {
-                val n = runCatching { it.name }.getOrNull() ?: ""
-                n.contains("Wireless Controller", ignoreCase = true) ||
-                    n.contains("DUALSHOCK", ignoreCase = true) ||
-                    n.contains("DualSense", ignoreCase = true)
-            } ?: return Result.failure(IllegalStateException("Pair the DS4 first"))
-
-            device = ds4
-            return Result.success(Unit)
+            val ok = adapter.getProfileProxy(context, l, 4)
+            if (!ok) cont.resume(Result.failure(IllegalStateException("HID Host profile is unavailable")))
+            cont.invokeOnCancellation { listener = null }
         } catch (t: Throwable) {
-            Result.failure(t)
+            cont.resume(Result.failure(t))
         }
     }
 
