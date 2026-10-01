@@ -1,58 +1,43 @@
 package com.fiwly.rgb
 
 import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import kotlinx.coroutines.*
+import androidx.core.content.ContextCompat
 
 class Ds4ReconnectReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
-        if (action != BluetoothDevice.ACTION_ACL_CONNECTED &&
-            action != "android.bluetooth.input.profile.action.CONNECTION_STATE_CHANGED") return
 
-        val pending = goAsync()
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            try {
-                val prefs = context.getSharedPreferences("ds4_rgb_slots", Context.MODE_PRIVATE)
-                if (!prefs.getBoolean("auto_enabled", false)) return@launch
+        val relevant = action == BluetoothDevice.ACTION_ACL_CONNECTED ||
+            action == "android.bluetooth.input.profile.action.CONNECTION_STATE_CHANGED" ||
+            action == BluetoothDevice.ACTION_BOND_STATE_CHANGED ||
+            action == "android.bluetooth.adapter.action.STATE_CHANGED"
 
-                val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
-                if (device != null) {
-                    val name = try { device.name ?: "" } catch (_: Throwable) { "" }
-                    if (!name.contains("Wireless Controller", true) &&
-                        !name.contains("DUALSHOCK", true)) return@launch
-                }
+        if (!relevant) return
 
-                val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
-                    ?: return@launch
+        val prefs = context.getSharedPreferences(
+            Ds4ColorKeeperService.PREFS,
+            Context.MODE_PRIVATE
+        )
+        if (!prefs.getBoolean("auto_enabled", false)) return
 
-                val color = Ds4Color(
-                    prefs.getInt("auto_r", 0),
-                    prefs.getInt("auto_g", 0),
-                    prefs.getInt("auto_b", 0),
-                    100
-                )
+        val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+        if (device != null) {
+            val name = try { device.name ?: "" } catch (_: Throwable) { "" }
+            if (!name.contains("Wireless Controller", true) &&
+                !name.contains("DUALSHOCK", true)) return
+        }
 
-                val transport = AndroidHidHostTransport(context, adapter)
-
-                // HID Host can become ready several seconds after Bluetooth reports
-                // the controller connection. Keep retrying until the profile is ready.
-                repeat(15) { attempt ->
-                    delay(if (attempt == 0) 1000L else 1000L)
-                    if (transport.setLightbar(color).isSuccess) {
-                        transport.close()
-                        return@launch
-                    }
-                }
-
-                transport.close()
-            } catch (_: Throwable) {
-            } finally {
-                pending.finish()
-            }
+        try {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, Ds4ColorKeeperService::class.java)
+            )
+        } catch (_: Throwable) {
+            // The service may already be running. MainActivity can also start it
+            // when the user opens the app.
         }
     }
 }
