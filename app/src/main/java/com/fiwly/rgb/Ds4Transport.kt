@@ -1,14 +1,5 @@
 package com.fiwly.rgb
 
-interface Ds4Transport {
-    val name: String
-    suspend fun connect(): Result<Unit>
-    suspend fun setLightbar(color: Ds4Color): Result<Unit>
-    fun close()
-}
-
-package com.fiwly.rgb
-
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
