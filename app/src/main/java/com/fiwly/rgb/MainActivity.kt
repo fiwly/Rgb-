@@ -18,7 +18,7 @@ class MainActivity:Activity(){
  private lateinit var transport:Ds4Transport
  private val btAdapter:BluetoothAdapter? by lazy{(getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter}
  override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContentView(R.layout.activity_main)
-  status=findViewById(R.id.status);preview=findViewById(R.id.preview);rgbText=findViewById(R.id.rgbText);transport=AndroidPublicTransport()
+  status=findViewById(R.id.status);preview=findViewById(R.id.preview);rgbText=findViewById(R.id.rgbText);transport=AndroidHidHostTransport(this, btAdapter ?: BluetoothAdapter.getDefaultAdapter())
   val connect=findViewById<Button>(R.id.connect);val apply=findViewById<Button>(R.id.apply)
   val r=findViewById<SeekBar>(R.id.red);val g=findViewById<SeekBar>(R.id.green);val b=findViewById<SeekBar>(R.id.blue);val brightness=findViewById<SeekBar>(R.id.brightness)
   listOf(r,g,b,brightness).forEach{it.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
