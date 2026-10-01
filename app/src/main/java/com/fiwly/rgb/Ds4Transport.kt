@@ -65,20 +65,20 @@ class AndroidHidHostTransport(
                                 HiddenApiBypass.invoke(hostClass, p, "connect", paired)
                             } catch (_: Throwable) {}
 
-                            var connected = false
+                            var connectedOk = false
                             repeat(20) {
                                 val state = try { p.getConnectionState(paired) } catch (_: Throwable) {
                                     BluetoothProfile.STATE_DISCONNECTED
                                 }
                                 if (state == BluetoothProfile.STATE_CONNECTED) {
                                     device = paired
-                                    connected = true
+                                    connectedOk = true
                                     return@repeat
                                 }
                                 Thread.sleep(350L)
                             }
 
-                            if (connected) {
+                            if (connectedOk) {
                                 cont.resume(Result.success(Unit))
                             } else {
                                 val state = try { p.getConnectionState(paired) } catch (_: Throwable) {
@@ -168,19 +168,19 @@ class AndroidHidHostTransport(
                 HiddenApiBypass.invoke(hostClass, p, "connect", d)
             } catch (_: Throwable) {}
 
-            var connected = false
+            var connectedOk = false
             repeat(12) {
                 val s = try { p.getConnectionState(d) } catch (_: Throwable) {
                     BluetoothProfile.STATE_DISCONNECTED
                 }
                 if (s == BluetoothProfile.STATE_CONNECTED) {
-                    connected = true
+                    connectedOk = true
                     return@repeat
                 }
                 kotlinx.coroutines.delay(500L)
             }
 
-            if (!connected) {
+            if (!connectedOk) {
                 return Result.failure<Unit>(
                     IllegalStateException(
                         "DS4 HID state is " + stateName(state) + ". Reconnect request was sent but Android did not expose HID as CONNECTED."
