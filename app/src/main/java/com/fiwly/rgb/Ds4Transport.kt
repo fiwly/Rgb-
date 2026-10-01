@@ -5,79 +5,90 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
 import java.lang.reflect.Method
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 
 class AndroidHidHostTransport(
     private val context: android.content.Context,
     private val adapter: BluetoothAdapter
 ) : Ds4Transport {
+    companion object {
+        private const val HID_HOST_PROFILE = 4
+        private const val CONNECT_TIMEOUT_MS = 8_000L
+    }
+
     override val name = "Android HID Host"
     private var proxy: Any? = null
     private var device: BluetoothDevice? = null
     private var listener: BluetoothProfile.ServiceListener? = null
 
-    override suspend fun connect(): Result<Unit> =
-        suspendCancellableCoroutine { cont ->
-            try {
-                val serviceListener = object : BluetoothProfile.ServiceListener {
-                    override fun onServiceConnected(profile: Int, p: BluetoothProfile) {
-                        proxy = p
-                        val ds4 = try {
-                            adapter.bondedDevices.firstOrNull {
-                                val n = it.name ?: ""
-                                n.contains("Wireless Controller", true) ||
-                                    n.contains("DUALSHOCK", true)
+    override suspend fun connect(): Result<Unit> {
+        if (proxy != null && device != null) return Result.success(Unit)
+
+        val result = withTimeoutOrNull(CONNECT_TIMEOUT_MS) {
+            suspendCancellableCoroutine<Result<Unit>> { cont ->
+                try {
+                    val serviceListener = object : BluetoothProfile.ServiceListener {
+                        override fun onServiceConnected(profile: Int, p: BluetoothProfile) {
+                            proxy = p
+                            val ds4 = findConnectedDs4(p) ?: findBondedDs4()
+                            if (ds4 == null) {
+                                cont.resume(Result.failure<Unit>(
+                                    IllegalStateException(
+                                        "DS4 is paired but not connected as a HID device. Connect it in Bluetooth settings first."
+                                    )
+                                ))
+                            } else {
+                                device = ds4
+                                cont.resume(Result.success(Unit))
                             }
-                        } catch (_: Throwable) {
-                            null
                         }
 
-                        if (ds4 == null) {
-                            cont.resume(
-                                Result.failure<Unit>(
-                                    IllegalStateException("Pair the DS4 first")
-                                )
-                            )
-                        } else {
-                            device = ds4
-                            cont.resume(Result.success(Unit))
+                        override fun onServiceDisconnected(profile: Int) {
+                            proxy = null
+                            device = null
                         }
                     }
 
-                    override fun onServiceDisconnected(profile: Int) {
-                        proxy = null
+                    listener = serviceListener
+                    val ok = adapter.getProfileProxy(context, serviceListener, HID_HOST_PROFILE)
+                    if (!ok) {
+                        cont.resume(Result.failure<Unit>(
+                            IllegalStateException("HID Host profile is unavailable on this device.")
+                        ))
                     }
+                    cont.invokeOnCancellation { listener = null }
+                } catch (t: Throwable) {
+                    cont.resume(Result.failure<Unit>(t))
                 }
-
-                listener = serviceListener
-                val ok = adapter.getProfileProxy(context, serviceListener, 4)
-                if (!ok) {
-                    cont.resume(
-                        Result.failure<Unit>(
-                            IllegalStateException("HID Host profile is unavailable")
-                        )
-                    )
-                }
-
-                cont.invokeOnCancellation { listener = null }
-            } catch (t: Throwable) {
-                cont.resume(Result.failure<Unit>(t))
             }
         }
 
+        return result ?: Result.failure(
+            IllegalStateException(
+                "Timed out waiting for Android HID Host. Keep the DS4 connected over Bluetooth and try again."
+            )
+        )
+    }
+
     override suspend fun setLightbar(color: Ds4Color): Result<Unit> {
-        val p = proxy
-            ?: return Result.failure<Unit>(IllegalStateException("HID Host is not connected"))
-        val d = device
-            ?: return Result.failure<Unit>(IllegalStateException("DS4 is not selected"))
+        if (proxy == null || device == null) {
+            val connection = connect()
+            if (connection.isFailure) return connection
+        }
+
+        val p = proxy ?: return Result.failure<Unit>(
+            IllegalStateException("HID Host proxy is unavailable")
+        )
+        val d = device ?: return Result.failure<Unit>(
+            IllegalStateException("DS4 is not selected")
+        )
 
         return try {
             val report = Ds4Report.bluetoothLightbar(color.red, color.green, color.blue)
-            val hex = report.joinToString("") {
-                "%02x".format(it.toInt() and 0xFF)
-            }
-
+            val hex = report.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
             val attempts = mutableListOf<String>()
+
             val hostClass = try {
                 Class.forName("android.bluetooth.BluetoothHidHost")
             } catch (_: Throwable) {
@@ -134,11 +145,57 @@ class AndroidHidHostTransport(
 
             Result.failure<Unit>(
                 UnsupportedOperationException(
-                    "HID output unavailable. methods=$methodNames; attempts=${attempts.joinToString(" | ")}"
+                    "HID output unavailable. device=${d.name ?: "unknown"}; " +
+                        "methods=$methodNames; attempts=${attempts.joinToString(" | ")}"
                 )
             )
         } catch (t: Throwable) {
             Result.failure<Unit>(t.cause ?: t)
+        }
+    }
+
+    private fun findBondedDs4(): BluetoothDevice? {
+        return try {
+            adapter.bondedDevices.firstOrNull { isDs4(it) }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun findConnectedDs4(profile: BluetoothProfile): BluetoothDevice? {
+        return try {
+            val method = findNoArgMethod(profile.javaClass, "getConnectedDevices")
+                ?: findNoArgMethod(
+                    Class.forName("android.bluetooth.BluetoothHidHost"),
+                    "getConnectedDevices"
+                )
+                ?: return null
+
+            @Suppress("UNCHECKED_CAST")
+            val devices = method.invoke(profile) as? List<BluetoothDevice> ?: return null
+            devices.firstOrNull { isDs4(it) }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun isDs4(device: BluetoothDevice): Boolean {
+        val n = try { device.name ?: "" } catch (_: Throwable) { "" }
+        return n.contains("Wireless Controller", true) ||
+            n.contains("DUALSHOCK", true)
+    }
+
+    private fun findNoArgMethod(clazz: Class<*>, name: String): Method? {
+        return try {
+            clazz.getDeclaredMethod(name).also { it.isAccessible = true }
+        } catch (_: Throwable) {
+            try {
+                clazz.methods.firstOrNull {
+                    it.name == name && it.parameterTypes.isEmpty()
+                }
+            } catch (_: Throwable) {
+                null
+            }
         }
     }
 
@@ -148,9 +205,7 @@ class AndroidHidHostTransport(
         vararg parameterTypes: Class<*>
     ): Method? {
         return try {
-            clazz.getDeclaredMethod(name, *parameterTypes).also {
-                it.isAccessible = true
-            }
+            clazz.getDeclaredMethod(name, *parameterTypes).also { it.isAccessible = true }
         } catch (_: Throwable) {
             try {
                 clazz.methods.firstOrNull {
@@ -173,9 +228,7 @@ class AndroidHidHostTransport(
 
     override fun close() {
         try {
-            proxy?.let {
-                adapter.closeProfileProxy(4, it as BluetoothProfile)
-            }
+            proxy?.let { adapter.closeProfileProxy(HID_HOST_PROFILE, it as BluetoothProfile) }
         } catch (_: Throwable) {
         }
         proxy = null
