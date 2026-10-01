@@ -81,7 +81,19 @@ class Ds4ColorKeeperService : Service() {
                         delay(1500L)
                     }
 
-                    if (!reconnected) delay(3000L)
+                    if (!reconnected) {
+                        // HID Host reconnect is privileged on current Android.
+                        // Give the transport its raw DS4 L2CAP fallback one
+                        // chance to wake the controller/link and restore RGB.
+                        val rawRestore = t.setLightbar(color)
+                        if (rawRestore.isSuccess) {
+                            restoreNeeded = false
+                            lastConnected = false
+                            delay(2500L)
+                        } else {
+                            delay(3000L)
+                        }
+                    }
                     continue
                 }
 
