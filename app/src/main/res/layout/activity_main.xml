@@ -7,6 +7,14 @@
 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="COLOR WHEEL" android:textColor="#FFFFFF" android:textSize="18sp" android:textStyle="bold"/>
 <com.fiwly.rgb.ColorWheelView android:id="@+id/colorWheel" android:layout_width="match_parent" android:layout_height="300dp" android:layout_marginTop="4dp"/>
 <View android:id="@+id/preview" android:layout_width="match_parent" android:layout_height="72dp" android:layout_marginTop="4dp" android:background="#3040FF"/>
+<LinearLayout android:id="@+id/rgbControls" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginTop="6dp">
+<TextView android:id="@+id/rText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="R" android:textColor="#FFFFFF"/>
+<SeekBar android:id="@+id/rSeek" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="255"/>
+<TextView android:id="@+id/gText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="G" android:textColor="#FFFFFF"/>
+<SeekBar android:id="@+id/gSeek" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="255"/>
+<TextView android:id="@+id/bText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="B" android:textColor="#FFFFFF"/>
+<SeekBar android:id="@+id/bSeek" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="255"/>
+</LinearLayout>
 <TextView android:id="@+id/rgbText" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="RGB 48, 64, 255" android:textColor="#FFFFFF" android:textSize="18sp"/>
 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="6dp">
 <EditText android:id="@+id/hexText" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:hint="#3040FF" android:textColor="#FFFFFF" android:textColorHint="#777777" android:singleLine="true" android:inputType="textCapCharacters"/>
