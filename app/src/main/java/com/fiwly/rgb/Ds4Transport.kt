@@ -31,6 +31,9 @@ class AndroidHidHostTransport(
                 device = existingDevice
                 return Result.success(Unit)
             }
+            try { adapter.closeProfileProxy(HID_HOST_PROFILE, existing) } catch (_: Throwable) {}
+            proxy = null
+            device = null
         }
 
         val result = withTimeoutOrNull(CONNECT_TIMEOUT_MS) {
@@ -112,6 +115,17 @@ class AndroidHidHostTransport(
                 "Timed out waiting for Android HID Host. Keep the DS4 connected over Bluetooth and try again."
             )
         )
+    }
+
+    override suspend fun isConnected(): Boolean {
+        val p = proxy ?: return false
+        val d = device ?: findConnectedDs4(p) ?: return false
+        device = d
+        return try {
+            p.getConnectionState(d) == BluetoothProfile.STATE_CONNECTED
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     override suspend fun setLightbar(color: Ds4Color): Result<Unit> {
