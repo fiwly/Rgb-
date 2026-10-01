@@ -1,19 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#101014">
-<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="24dp">
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="DS4 RGB" android:textColor="#FFFFFF" android:textSize="30sp" android:textStyle="bold"/>
 <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Checking Bluetooth…" android:textColor="#BDBDBD"/>
-<Button android:id="@+id/connect" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="Find DualShock 4"/>
-<View android:id="@+id/preview" android:layout_width="match_parent" android:layout_height="120dp" android:layout_marginTop="20dp" android:background="#3040FF"/>
-<TextView android:id="@+id/rgbText" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="RGB 48, 64, 255" android:textColor="#FFFFFF" android:textSize="18sp"/>
-<SeekBar android:id="@+id/red" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="255" android:progress="48"/>
-<SeekBar android:id="@+id/green" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="255" android:progress="64"/>
-<SeekBar android:id="@+id/blue" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="255" android:progress="255"/>
-<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:text="Brightness" android:textColor="#BDBDBD"/>
+<Button android:id="@+id/connect" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="Find DualShock 4"/>
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="COLOR WHEEL" android:textColor="#FFFFFF" android:textSize="18sp" android:textStyle="bold"/>
+<com.fiwly.rgb.ColorWheelView android:id="@+id/colorWheel" android:layout_width="match_parent" android:layout_height="300dp" android:layout_marginTop="4dp"/>
+<View android:id="@+id/preview" android:layout_width="match_parent" android:layout_height="72dp" android:layout_marginTop="4dp" android:background="#3040FF"/>
+<TextView android:id="@+id/rgbText" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="RGB 48, 64, 255" android:textColor="#FFFFFF" android:textSize="18sp"/>
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="6dp">
+<EditText android:id="@+id/hexText" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:hint="#3040FF" android:textColor="#FFFFFF" android:textColorHint="#777777" android:singleLine="true" android:inputType="textCapCharacters"/>
+<Button android:id="@+id/setHex" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Set"/>
+</LinearLayout>
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="Brightness" android:textColor="#BDBDBD"/>
 <SeekBar android:id="@+id/brightness" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="100" android:progress="100"/>
-<Button android:id="@+id/apply" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="Apply color"/>
-<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="26dp" android:text="COLOR SLOTS" android:textColor="#FFFFFF" android:textSize="18sp" android:textStyle="bold"/>
+<Button android:id="@+id/apply" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Apply color"/>
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="COLOR SLOTS" android:textColor="#FFFFFF" android:textSize="18sp" android:textStyle="bold"/>
 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Save your favorite colors and use them anytime." android:textColor="#9E9E9E" android:textSize="13sp"/>
 <LinearLayout android:id="@+id/slotsContainer" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:orientation="vertical"/>
-<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="Android public Bluetooth does not expose raw HID output reports for a paired gamepad. This app keeps the RGB UI and DS4 packet builder separate from the transport layer." android:textColor="#9E9E9E" android:textSize="13sp"/>
 </LinearLayout></ScrollView>
