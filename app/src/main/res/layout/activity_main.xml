@@ -3,6 +3,10 @@
 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="DS4 RGB" android:textColor="#FFFFFF" android:textSize="30sp" android:textStyle="bold"/>
 <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Checking Bluetooth…" android:textColor="#BDBDBD"/>
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="BACKGROUND &amp; AUTO RESTORE" android:textColor="#FFFFFF" android:textSize="18sp" android:textStyle="bold"/>
+<TextView android:id="@+id/backgroundStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Checking background settings…" android:textColor="#BDBDBD"/>
+<Button android:id="@+id/backgroundSettings" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="Set Background Permissions"/>
+<Button android:id="@+id/batterySettings" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Set Battery to Unrestricted"/>
 <Button android:id="@+id/connect" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="Find DualShock 4"/>
 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="COLOR WHEEL" android:textColor="#FFFFFF" android:textSize="18sp" android:textStyle="bold"/>
 <com.fiwly.rgb.ColorWheelView android:id="@+id/colorWheel" android:layout_width="match_parent" android:layout_height="300dp" android:layout_marginTop="4dp"/>
