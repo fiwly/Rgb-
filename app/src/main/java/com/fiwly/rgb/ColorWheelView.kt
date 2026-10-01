@@ -25,7 +25,6 @@ class ColorWheelView @JvmOverloads constructor(
     private var cy = 0f
     private var outerRadius = 0f
     private var innerRadius = 0f
-    private var selectingWheel = true
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -35,7 +34,8 @@ class ColorWheelView @JvmOverloads constructor(
         outerRadius = min(width, height) * 0.46f
         innerRadius = outerRadius * 0.72f
 
-        // Accurate hue ring.
+        // Hue ring. SweepGradient starts at the right side (0 degrees),
+        // so touch coordinates below use the same angle directly.
         val hueColors = IntArray(361) { i ->
             Color.HSVToColor(floatArrayOf(i.toFloat(), 1f, 1f))
         }
@@ -47,7 +47,7 @@ class ColorWheelView @JvmOverloads constructor(
         paint.color = Color.rgb(16, 16, 20)
         canvas.drawCircle(cx, cy, innerRadius - 3f, paint)
 
-        // HSV saturation/value square rendered as a circular selection area.
+        // Saturation/value picker.
         val svRadius = innerRadius * 0.94f
         val base = Color.HSVToColor(floatArrayOf(hsv[0], 1f, 1f))
         paint.shader = LinearGradient(
@@ -63,8 +63,8 @@ class ColorWheelView @JvmOverloads constructor(
         canvas.drawCircle(cx, cy, svRadius, paint)
         paint.shader = null
 
-        // Hue marker.
-        val hueAngle = Math.toRadians((hsv[0] - 90f).toDouble())
+        // Hue marker: use exactly the same angle system as the rendered ring.
+        val hueAngle = Math.toRadians(hsv[0].toDouble())
         val hx = cx + cos(hueAngle).toFloat() * ((outerRadius + innerRadius) / 2f)
         val hy = cy + sin(hueAngle).toFloat() * ((outerRadius + innerRadius) / 2f)
         marker.strokeWidth = 5f
@@ -94,12 +94,13 @@ class ColorWheelView @JvmOverloads constructor(
         val distance = hypot(dx, dy)
 
         if (distance >= innerRadius * 0.84f && distance <= outerRadius + 20f) {
-            selectingWheel = true
-            var hue = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat() + 90f
+            // IMPORTANT: no +90/-90 offset.
+            // The rendered SweepGradient and touch angle now use the exact same
+            // coordinate system, so tapping blue selects blue, not pink.
+            var hue = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
             hue = ((hue % 360f) + 360f) % 360f
             hsv = floatArrayOf(hue, hsv[1], hsv[2])
         } else if (distance < innerRadius) {
-            selectingWheel = false
             val svRadius = innerRadius * 0.94f
             val sx = (dx / svRadius * 0.5f + 0.5f).coerceIn(0f, 1f)
             val sy = (1f - dy / svRadius * 0.5f).coerceIn(0f, 1f)
