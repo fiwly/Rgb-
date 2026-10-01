@@ -20,6 +20,17 @@ class MainActivity : ComponentActivity() {
     private lateinit var preview: View
     private lateinit var rgbText: TextView
     private lateinit var transport: Ds4Transport
+    private lateinit var redBar: SeekBar
+    private lateinit var greenBar: SeekBar
+    private lateinit var blueBar: SeekBar
+    private lateinit var brightnessBar: SeekBar
+    private lateinit var slotsContainer: LinearLayout
+
+    private val preferences by lazy {
+        getSharedPreferences("ds4_rgb_slots", MODE_PRIVATE)
+    }
+
+    private val slotCount = 8
 
     private val btAdapter: BluetoothAdapter? by lazy {
         (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
@@ -43,21 +54,27 @@ class MainActivity : ComponentActivity() {
         status = findViewById(R.id.status)
         preview = findViewById(R.id.preview)
         rgbText = findViewById(R.id.rgbText)
+        slotsContainer = findViewById(R.id.slotsContainer)
 
         val adapter = btAdapter ?: BluetoothAdapter.getDefaultAdapter()
         transport = AndroidHidHostTransport(this, adapter)
 
         val connect = findViewById<Button>(R.id.connect)
         val apply = findViewById<Button>(R.id.apply)
-        val r = findViewById<SeekBar>(R.id.red)
-        val g = findViewById<SeekBar>(R.id.green)
-        val b = findViewById<SeekBar>(R.id.blue)
-        val brightness = findViewById<SeekBar>(R.id.brightness)
+        redBar = findViewById(R.id.red)
+        greenBar = findViewById(R.id.green)
+        blueBar = findViewById(R.id.blue)
+        brightnessBar = findViewById(R.id.brightness)
 
-        listOf(r, g, b, brightness).forEach { seekBar ->
+        listOf(redBar, greenBar, blueBar, brightnessBar).forEach { seekBar ->
             seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, value: Int, fromUser: Boolean) {
-                    updatePreview(r.progress, g.progress, b.progress, brightness.progress)
+                    updatePreview(
+                        redBar.progress,
+                        greenBar.progress,
+                        blueBar.progress,
+                        brightnessBar.progress
+                    )
                 }
                 override fun onStartTrackingTouch(s: SeekBar?) = Unit
                 override fun onStopTrackingTouch(s: SeekBar?) = Unit
@@ -81,21 +98,164 @@ class MainActivity : ComponentActivity() {
         }
 
         apply.setOnClickListener {
-            if (!ensureBluetoothPermission()) return@setOnClickListener
-            val c = Ds4Color(r.progress, g.progress, b.progress, brightness.progress).scaled()
-            lifecycleScope.launch {
-                status.text = "Sending RGB " + c.red + ", " + c.green + ", " + c.blue + "..."
-                val result = transport.setLightbar(c)
-                status.text = result.fold(
-                    { "Sent RGB " + c.red + ", " + c.green + ", " + c.blue },
-                    { "Send failed: " + (it.message ?: it.javaClass.simpleName) }
-                )
-            }
+            sendCurrentColor()
         }
 
-        updatePreview(r.progress, g.progress, b.progress, brightness.progress)
+        buildSlots()
+        updatePreview(
+            redBar.progress,
+            greenBar.progress,
+            blueBar.progress,
+            brightnessBar.progress
+        )
         updateBluetoothStatus()
     }
+
+    private fun sendCurrentColor() {
+        if (!ensureBluetoothPermission()) return
+
+        val c = currentColor()
+        lifecycleScope.launch {
+            status.text = "Sending RGB " + c.red + ", " + c.green + ", " + c.blue + "..."
+            val result = transport.setLightbar(c)
+            status.text = result.fold(
+                { "Sent RGB " + c.red + ", " + c.green + ", " + c.blue },
+                { "Send failed: " + (it.message ?: it.javaClass.simpleName) }
+            )
+        }
+    }
+
+    private fun currentColor(): Ds4Color =
+        Ds4Color(
+            redBar.progress,
+            greenBar.progress,
+            blueBar.progress,
+            brightnessBar.progress
+        ).scaled()
+
+    private fun buildSlots() {
+        slotsContainer.removeAllViews()
+
+        for (index in 0 until slotCount) {
+            val slotNumber = index + 1
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(0, 8, 0, 8)
+            }
+
+            val colorView = View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply {
+                    marginEnd = dp(12)
+                }
+            }
+
+            val name = TextView(this).apply {
+                text = "Slot " + slotNumber
+                textSize = 16f
+                setTextColor(Color.WHITE)
+                layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                }
+            }
+
+            val use = Button(this).apply {
+                text = "Use"
+                isAllCaps = false
+                setOnClickListener {
+                    if (loadSlot(index)) sendCurrentColor()
+                }
+            }
+
+            val save = Button(this).apply {
+                text = "Save"
+                isAllCaps = false
+                setOnClickListener {
+                    saveSlot(index)
+                    refreshSlotPreviews()
+                    status.text = "Saved current color to Slot " + slotNumber
+                }
+            }
+
+            row.addView(colorView)
+            row.addView(name)
+            row.addView(use, LinearLayout.LayoutParams(dp(72), dp(48)).apply {
+                marginStart = dp(4)
+            })
+            row.addView(save, LinearLayout.LayoutParams(dp(72), dp(48)).apply {
+                marginStart = dp(4)
+            })
+            slotsContainer.addView(row)
+        }
+
+        refreshSlotPreviews()
+    }
+
+    private fun saveSlot(index: Int) {
+        val c = Ds4Color(
+            redBar.progress,
+            greenBar.progress,
+            blueBar.progress,
+            brightnessBar.progress
+        )
+
+        preferences.edit()
+            .putInt(key(index, "r"), c.red)
+            .putInt(key(index, "g"), c.green)
+            .putInt(key(index, "b"), c.blue)
+            .putInt(key(index, "brightness"), c.brightness)
+            .putBoolean(key(index, "saved"), true)
+            .apply()
+    }
+
+    private fun loadSlot(index: Int): Boolean {
+        if (!preferences.getBoolean(key(index, "saved"), false)) {
+            status.text = "Slot " + (index + 1) + " is empty. Save a color to it first."
+            return false
+        }
+
+        redBar.progress = preferences.getInt(key(index, "r"), 0)
+        greenBar.progress = preferences.getInt(key(index, "g"), 0)
+        blueBar.progress = preferences.getInt(key(index, "b"), 0)
+        brightnessBar.progress = preferences.getInt(key(index, "brightness"), 100)
+
+        updatePreview(
+            redBar.progress,
+            greenBar.progress,
+            blueBar.progress,
+            brightnessBar.progress
+        )
+        status.text = "Loaded Slot " + (index + 1)
+        return true
+    }
+
+    private fun refreshSlotPreviews() {
+        for (index in 0 until slotsContainer.childCount) {
+            val row = slotsContainer.getChildAt(index) as LinearLayout
+            val colorView = row.getChildAt(0)
+            val saved = preferences.getBoolean(key(index, "saved"), false)
+
+            if (!saved) {
+                colorView.setBackgroundColor(Color.rgb(55, 55, 62))
+                continue
+            }
+
+            val c = Ds4Color(
+                preferences.getInt(key(index, "r"), 0),
+                preferences.getInt(key(index, "g"), 0),
+                preferences.getInt(key(index, "b"), 0),
+                preferences.getInt(key(index, "brightness"), 100)
+            ).scaled()
+
+            colorView.setBackgroundColor(Color.rgb(c.red, c.green, c.blue))
+        }
+    }
+
+    private fun key(index: Int, suffix: String): String =
+        "slot_" + index + "_" + suffix
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     private fun ensureBluetoothPermission(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
