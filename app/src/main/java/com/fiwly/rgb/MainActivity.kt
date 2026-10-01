@@ -110,7 +110,28 @@ class MainActivity:ComponentActivity(){
  }
  private fun k(i:Int,s:String)="slot_"+i+"_"+s
  private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
- private fun requestNotificationPermission(){\n  if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){\n   try{requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),9001)}catch(_:Throwable){}\n  }\n }\n private fun openBackgroundSettings(){\n  try{startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName")))}catch(_:Throwable){}\n }\n private fun openBatterySettings(){\n  try{\n   val pm=getSystemService(POWER_SERVICE) as PowerManager\n   if(Build.VERSION.SDK_INT>=23&&!pm.isIgnoringBatteryOptimizations(packageName)){\n    startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,Uri.parse("package:$packageName")))\n   }else startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))\n  }catch(_:Throwable){try{startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))}catch(_:Throwable){}}\n }\n private fun updateBackgroundStatus(){\n  val pm=getSystemService(POWER_SERVICE) as PowerManager\n  val unrestricted=Build.VERSION.SDK_INT<23||pm.isIgnoringBatteryOptimizations(packageName)\n  backgroundStatus.text=if(unrestricted)"✓ Background service ready • Battery unrestricted" else "⚠ Battery optimization is still enabled"\n }\n private fun permission():Boolean{
+ private fun requestNotificationPermission(){
+  if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){
+   try{requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),9001)}catch(_:Throwable){}
+  }
+ }
+ private fun openBackgroundSettings(){
+  try{startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName")))}catch(_:Throwable){}
+ }
+ private fun openBatterySettings(){
+  try{
+   val pm=getSystemService(POWER_SERVICE) as PowerManager
+   if(Build.VERSION.SDK_INT>=23&&!pm.isIgnoringBatteryOptimizations(packageName)){
+    startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,Uri.parse("package:$packageName")))
+   }else startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+  }catch(_:Throwable){try{startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))}catch(_:Throwable){}}
+ }
+ private fun updateBackgroundStatus(){
+  val pm=getSystemService(POWER_SERVICE) as PowerManager
+  val unrestricted=Build.VERSION.SDK_INT<23||pm.isIgnoringBatteryOptimizations(packageName)
+  backgroundStatus.text=if(unrestricted)"✓ Background service ready • Battery unrestricted" else "⚠ Battery optimization is still enabled"
+ }
+ private fun permission():Boolean{
   if(Build.VERSION.SDK_INT<Build.VERSION_CODES.S)return true
   val c=ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED
   val s=ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED
