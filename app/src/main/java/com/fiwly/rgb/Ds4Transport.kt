@@ -3,8 +3,6 @@ package com.fiwly.rgb
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.lang.reflect.Method
 
 /**
@@ -15,13 +13,13 @@ import java.lang.reflect.Method
  * This does NOT require root by design. If the firmware blocks hidden API
  * access, the transport reports a clear failure and the app remains usable.
  */
-class AndroidHidHostTransport(private val adapter: BluetoothAdapter) : Ds4Transport {
+class AndroidHidHostTransport(private val context: android.content.Context, private val adapter: BluetoothAdapter) : Ds4Transport {
     override val name = "Android HID Host (hidden API)"
     private var proxy: Any? = null
     private var device: BluetoothDevice? = null
     private var listener: BluetoothProfile.ServiceListener? = null
 
-    override suspend fun connect(): Result<Unit> = withContext(Dispatchers.Main) {
+    override suspend fun connect(): Result<Unit> {
         try {
             val l = object : BluetoothProfile.ServiceListener {
                 override fun onServiceConnected(profile: Int, p: BluetoothProfile) {
@@ -37,11 +35,11 @@ class AndroidHidHostTransport(private val adapter: BluetoothAdapter) : Ds4Transp
             // profile id 4. We keep the value local so this project compiles
             // against the public SDK.
             val ok = adapter.getProfileProxy(
-                AppContextHolder.context,
+                context,
                 l,
                 4
             )
-            if (!ok) return@withContext Result.failure(IllegalStateException("HID Host profile is unavailable"))
+            if (!ok) return Result.failure(IllegalStateException("HID Host profile is unavailable"))
 
             val bonded = adapter.bondedDevices
             val ds4 = bonded.firstOrNull {
@@ -49,16 +47,16 @@ class AndroidHidHostTransport(private val adapter: BluetoothAdapter) : Ds4Transp
                 n.contains("Wireless Controller", ignoreCase = true) ||
                     n.contains("DUALSHOCK", ignoreCase = true) ||
                     n.contains("DualSense", ignoreCase = true)
-            } ?: return@withContext Result.failure(IllegalStateException("Pair the DS4 first"))
+            } ?: return Result.failure(IllegalStateException("Pair the DS4 first"))
 
             device = ds4
-            Result.success(Unit)
+            return Result.success(Unit)
         } catch (t: Throwable) {
             Result.failure(t)
         }
     }
 
-    override suspend fun setLightbar(color: Ds4Color): Result<Unit> = withContext(Dispatchers.Main) {
+    override suspend fun setLightbar(color: Ds4Color): Result<Unit> {
         val p = proxy ?: return@withContext Result.failure(IllegalStateException("HID Host is not connected"))
         val d = device ?: return@withContext Result.failure(IllegalStateException("DS4 is not selected"))
 
@@ -79,8 +77,8 @@ class AndroidHidHostTransport(private val adapter: BluetoothAdapter) : Ds4Transp
             )
 
             val sent = method.invoke(p, d, hex) as? Boolean ?: false
-            if (sent) Result.success(Unit)
-            else Result.failure(IllegalStateException("HID Host rejected the output report"))
+            if (sent) return Result.success(Unit)
+            return Result.failure(IllegalStateException("HID Host rejected the output report"))
         } catch (t: Throwable) {
             Result.failure(t.cause ?: t)
         }
