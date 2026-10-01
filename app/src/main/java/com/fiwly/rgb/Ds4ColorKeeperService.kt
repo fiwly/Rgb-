@@ -68,10 +68,23 @@ class Ds4ColorKeeperService : Service() {
                     lastConnected = false
                     restoreNeeded = true
 
-                    // Request a fresh HID Host proxy. Retry every few seconds until
-                    // Android exposes the DS4 as connected.
-                    t.connect()
-                    delay(1800L)
+                    // HyperOS can leave the old HID Host proxy alive after Bluetooth
+                    // toggles. Drop that proxy first, then request a completely fresh
+                    // HID Host connection.
+                    t.close()
+
+                    var reconnected = false
+                    repeat(12) {
+                        if (!scope.isActive) return@repeat
+                        val result = t.connect()
+                        if (result.isSuccess && t.isConnected()) {
+                            reconnected = true
+                            return@repeat
+                        }
+                        delay(1500L)
+                    }
+
+                    if (!reconnected) delay(2500L)
                     continue
                 }
 
