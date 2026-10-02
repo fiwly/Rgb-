@@ -16,7 +16,7 @@ class AndroidHidHostTransport(
 ) : Ds4Transport {
     companion object {
         private const val HID_HOST_PROFILE = 4
-        private const val CONNECT_TIMEOUT_MS = 3_000L
+        private const val PROXY_TIMEOUT_MS = 3_000L
     }
 
     override val name = "Android HID Host"
@@ -39,7 +39,7 @@ class AndroidHidHostTransport(
             return waitForNaturalConnection(existing, paired, CONNECT_TIMEOUT_MS)
         }
 
-        val result = withTimeoutOrNull(CONNECT_TIMEOUT_MS) {
+        val result = withTimeoutOrNull(PROXY_TIMEOUT_MS) {
             suspendCancellableCoroutine<Result<Unit>> { cont ->
                 try {
                     val serviceListener = object : BluetoothProfile.ServiceListener {
@@ -88,7 +88,7 @@ class AndroidHidHostTransport(
         // Android owns the HID connection lifecycle. Calling the hidden connect()
         // method from a normal app can cause the DS4 to be dropped and produces
         // the exact "DISCONNECTED after reconnect request" seen on the device.
-        return waitForNaturalConnection(p, paired, CONNECT_TIMEOUT_MS)
+        return Result.success(Unit)
     }
 
     private suspend fun waitForNaturalConnection(
@@ -158,12 +158,6 @@ class AndroidHidHostTransport(
 
         val profile = p
             ?: return Result.failure(IllegalStateException("HID Host proxy is unavailable"))
-
-        if (!isHidConnected(profile, ds4)) {
-            return Result.failure(
-                IllegalStateException("DS4 HID is not connected yet; waiting for Android HID Host.")
-            )
-        }
 
         return try {
             val report = Ds4Report.bluetoothLightbar(color.red, color.green, color.blue)
