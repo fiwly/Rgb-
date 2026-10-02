@@ -22,8 +22,6 @@ class AndroidHidHostTransport(
         // Hidden/System API values from BluetoothProfile. They are not exposed
         // in the public SDK, so keep the stable platform values locally.
         private const val CONNECTION_POLICY_ALLOWED = 100
-        private const val CONNECTION_POLICY_FORBIDDEN = 0
-        private const val CONNECTION_POLICY_UNKNOWN = -1
         private const val HID_CONTROL_PSM = 0x11
         private const val HID_INTERRUPT_PSM = 0x13
         private const val CONNECT_TIMEOUT_MS = 3_000L
@@ -95,61 +93,29 @@ class AndroidHidHostTransport(
     }
 
     private suspend fun ensureHidConnected(
-        p: BluetoothProfile,
-        d: BluetoothDevice,
-        timeoutMs: Long
+        p: BluetoothProfile, d: BluetoothDevice, timeoutMs: Long
     ): Result<Unit> {
         var state = connectionState(p, d)
+        if (state == BluetoothProfile.STATE_CONNECTED) return Result.success(Unit)
 
-        if (state == BluetoothProfile.STATE_CONNECTED) {
-            return Result.success(Unit)
-        }
-
-        // Android HID Host requires the connection policy to be ALLOWED
-        // before its internal handler performs nativeConnect(). A plain
-        // connect() can otherwise be accepted but never reach CONNECTED.
-        val policyResult = trySetConnectionPolicyAllowed(p, d)
-        if (policyResult == true && waitForConnected(p, d, timeoutMs)) {
-            return Result.success(Unit)
-        }
-
-        state = connectionState(p, d)
-
+        // Do not use HID connection-policy APIs here. They require a
+        // privileged permission on current Android and can report UNKNOWN
+        // to normal apps even when the paired controller is usable.
         if (state == BluetoothProfile.STATE_DISCONNECTING) {
-            waitForState(p, d, BluetoothProfile.STATE_DISCONNECTED, 4_000L)
+            waitForState(p, d, BluetoothProfile.STATE_DISCONNECTED, 1_500L)
             state = connectionState(p, d)
         }
-
         if (state == BluetoothProfile.STATE_CONNECTING) {
-            if (waitForConnected(p, d, timeoutMs)) {
-                return Result.success(Unit)
-            }
+            if (waitForConnected(p, d, timeoutMs)) return Result.success(Unit)
             state = connectionState(p, d)
         }
-
         if (state == BluetoothProfile.STATE_DISCONNECTED) {
             val accepted = requestHidConnect(p, d)
-            if (accepted != false && waitForConnected(p, d, timeoutMs)) {
-                return Result.success(Unit)
-            }
+            if (accepted != false && waitForConnected(p, d, timeoutMs)) return Result.success(Unit)
             state = connectionState(p, d)
         }
-
-        val policy = getConnectionPolicy(p, d)
-        val policyText = when (policy) {
-            CONNECTION_POLICY_ALLOWED -> "ALLOWED"
-            CONNECTION_POLICY_FORBIDDEN -> "FORBIDDEN"
-            CONNECTION_POLICY_UNKNOWN -> "UNKNOWN"
-            else -> "POLICY($policy)"
-        }
-
-        return Result.failure(
-            IllegalStateException(
-                "DS4 HID is ${stateName(state)} after reconnect request; policy=$policyText."
-            )
-        )
+        return Result.failure(IllegalStateException("DS4 HID is " + stateName(state) + " after reconnect request."))
     }
-
     private suspend fun waitForState(
         p: BluetoothProfile,
         d: BluetoothDevice,
@@ -236,46 +202,33 @@ class AndroidHidHostTransport(
     }
 
     override suspend fun setLightbar(color: Ds4Color): Result<Unit> {
-        var p = proxy
-        var d = device ?: findBondedDs4()
+        val ds4 = device ?: findBondedDs4()
+            ?: return Result.failure(IllegalStateException("No paired DualShock 4 found"))
+        device = ds4
 
-        if (p == null || d == null) {
+        // Fast path: use raw DS4 HIDP when the classic Bluetooth ACL is ready.
+        // This bypasses the privileged HID connection-policy API completely.
+        val raw = rawL2capLightbar(ds4, color)
+        if (raw.isSuccess) return raw
+
+        var p = proxy
+        if (p == null) {
             val connection = connect()
-            if (connection.isFailure) return connection
+            if (connection.isFailure) return Result.failure(
+                IllegalStateException("DS4 HID unavailable; rawL2cap=" + (raw.exceptionOrNull()?.message ?: "failed"))
+            )
             p = proxy
-            d = device
         }
 
         val profile = p ?: return Result.failure(IllegalStateException("HID Host proxy is unavailable"))
-        val ds4 = d ?: return Result.failure(IllegalStateException("DS4 is not selected"))
-
-        var state = try {
-            profile.getConnectionState(ds4)
-        } catch (t: Throwable) {
-            return Result.failure(
-                IllegalStateException("Cannot read HID state before sending: ${shortError(t)}")
-            )
-        }
-
+        var state = connectionState(profile, ds4)
         if (state != BluetoothProfile.STATE_CONNECTED) {
-            // Try native HID L2CAP first. This avoids waiting on a stale HID Host
-            // state when the controller's classic Bluetooth link is already ready.
-            val raw = rawL2capLightbar(ds4, color)
-            if (raw.isSuccess) return raw
-
-            // Give Android HID Host only a short window so a color change does
-            // not block for several seconds when the system HID profile is down.
             val connection = ensureHidConnected(profile, ds4, RESTORE_CONNECT_TIMEOUT_MS)
-            if (connection.isFailure) {
-                return Result.failure(
-                    IllegalStateException(
-                        connection.exceptionOrNull()?.message +
-                            "; rawL2cap=" + raw.exceptionOrNull()?.message
-                    )
-                )
-            }
+            if (connection.isFailure) return Result.failure(
+                IllegalStateException(connection.exceptionOrNull()?.message + "; rawL2cap=" + (raw.exceptionOrNull()?.message ?: "failed"))
+            )
+            state = connectionState(profile, ds4)
         }
-
         return try {
             val report = Ds4Report.bluetoothLightbar(color.red, color.green, color.blue)
             val hex = report.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
