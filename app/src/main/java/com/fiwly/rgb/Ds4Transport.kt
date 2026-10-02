@@ -3,9 +3,7 @@ package com.fiwly.rgb
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
-import java.io.IOException
 import java.lang.reflect.InvocationTargetException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -178,17 +176,13 @@ class AndroidHidHostTransport(
             ?: return Result.failure(IllegalStateException("No paired DualShock 4 found"))
         device = ds4
 
-        // Fast path: use raw DS4 HIDP when the classic Bluetooth ACL is ready.
-        // This bypasses the privileged HID connection-policy API completely.
-        val raw = rawL2capLightbar(ds4, color)
-        if (raw.isSuccess) return raw
-
+        // HID Host is the only transport used for output. Do not attempt raw
+        // L2CAP sockets here: on Android 14/15/16 devices they can fail with
+        // "ACL connection failed" even while the controller is paired/usable.
         var p = proxy
         if (p == null) {
             val connection = connect()
-            if (connection.isFailure) return Result.failure(
-                IllegalStateException("DS4 HID unavailable; rawL2cap=" + (raw.exceptionOrNull()?.message ?: "failed"))
-            )
+            if (connection.isFailure) return connection
             p = proxy
         }
 
@@ -196,9 +190,7 @@ class AndroidHidHostTransport(
         var state = connectionState(profile, ds4)
         if (state != BluetoothProfile.STATE_CONNECTED) {
             val connection = ensureHidConnected(profile, ds4, RESTORE_CONNECT_TIMEOUT_MS)
-            if (connection.isFailure) return Result.failure(
-                IllegalStateException(connection.exceptionOrNull()?.message + "; rawL2cap=" + (raw.exceptionOrNull()?.message ?: "failed"))
-            )
+            if (connection.isFailure) return connection
             state = connectionState(profile, ds4)
         }
         return try {
@@ -237,45 +229,6 @@ class AndroidHidHostTransport(
         }
     }
 
-    private suspend fun rawL2capLightbar(
-        ds4: BluetoothDevice,
-        color: Ds4Color
-    ): Result<Unit> = withContext(Dispatchers.IO) {
-        var control: android.bluetooth.BluetoothSocket? = null
-        var interrupt: android.bluetooth.BluetoothSocket? = null
-        try {
-            val deviceClass = BluetoothDevice::class.java
-            control = HiddenApiBypass.invoke(
-                deviceClass, ds4, "createL2capSocket", HID_CONTROL_PSM
-            ) as? android.bluetooth.BluetoothSocket
-                ?: throw IOException("createL2capSocket(control) returned null")
-
-            control.connect()
-
-            interrupt = HiddenApiBypass.invoke(
-                deviceClass, ds4, "createL2capSocket", HID_INTERRUPT_PSM
-            ) as? android.bluetooth.BluetoothSocket
-                ?: throw IOException("createL2capSocket(interrupt) returned null")
-            interrupt.connect()
-
-            val report = Ds4Report.bluetoothLightbar(color.red, color.green, color.blue)
-            val packet = ByteArray(report.size + 1)
-            packet[0] = 0xA2.toByte()
-            report.copyInto(packet, 1)
-
-            interrupt.outputStream.use { out ->
-                out.write(packet)
-                out.flush()
-            }
-
-            Result.success(Unit)
-        } catch (t: Throwable) {
-            Result.failure(t.cause ?: t)
-        } finally {
-            try { interrupt?.close() } catch (_: Throwable) {}
-            try { control?.close() } catch (_: Throwable) {}
-        }
-    }
 
     private fun findBondedDs4(): BluetoothDevice? {
         return try {
