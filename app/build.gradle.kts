@@ -11,8 +11,8 @@ android {
         applicationId = "com.fiwly.rgb"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.19.0"
+        versionCode = 18
+        versionName = "0.20.0"
     }
 
     compileOptions {
