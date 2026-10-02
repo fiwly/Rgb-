@@ -36,7 +36,7 @@ class AndroidHidHostTransport(
 
         val existing = proxy
         if (existing != null) {
-            return waitForNaturalConnection(existing, paired, CONNECT_TIMEOUT_MS)
+            return Result.success(Unit)
         }
 
         val result = withTimeoutOrNull(PROXY_TIMEOUT_MS) {
