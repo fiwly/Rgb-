@@ -61,35 +61,30 @@ class Ds4ColorKeeperService : Service() {
                 }
 
                 if (!proxyReady) {
-                    t.connect()
-                    proxyReady = true
-                }
-
-                val connectedNow = t.isConnected()
-
-                if (!connectedNow) {
-                    lastConnected = false
-                    restoreNeeded = true
-                    delay(250L)
-                    continue
-                }
-
-                if (!lastConnected || restoreNeeded) {
-                    var restored = false
-                    repeat(8) {
-                        if (!scope.isActive || !t.isConnected()) return@repeat
-                        val result = t.setLightbar(color)
-                        if (result.isSuccess) {
-                            restored = true
-                            return@repeat
-                        }
-                        delay(250L)
+                    val r = t.connect()
+                    proxyReady = r.isSuccess
+                    if (!proxyReady) {
+                        delay(500L)
+                        continue
                     }
-                    restoreNeeded = !restored
+                    restoreNeeded = true
                 }
 
-                lastConnected = true
-                delay(350L)
+                // Do not trust HID connection-state reporting on HyperOS.
+                // The actual HID output call is the connection test.
+                if (restoreNeeded || !lastConnected) {
+                    val result = t.setLightbar(color)
+                    if (result.isSuccess) {
+                        restoreNeeded = false
+                        lastConnected = true
+                    } else {
+                        lastConnected = false
+                        restoreNeeded = true
+                        delay(400L)
+                    }
+                } else {
+                    delay(700L)
+                }
             } catch (_: Throwable) {
                 lastConnected = false
                 restoreNeeded = true
