@@ -45,7 +45,8 @@ class MainActivity:ComponentActivity(){
   rSeek.setOnSeekBarChangeListener(rgbListener);gSeek.setOnSeekBarChangeListener(rgbListener);bSeek.setOnSeekBarChangeListener(rgbListener)
   brightness.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
    override fun onProgressChanged(s:SeekBar?,p:Int,f:Boolean){updatePreview()}
-   override fun onStartTrackingTouch(s:SeekBar?){};override fun onStopTrackingTouch(s:SeekBar?){}
+   override fun onStartTrackingTouch(s:SeekBar?){}
+   override fun onStopTrackingTouch(s:SeekBar?){}
   })
   findViewById<Button>(R.id.connect).setOnClickListener{connectDs4()}
   findViewById<Button>(R.id.apply).setOnClickListener{sendCurrentColor()}
@@ -57,7 +58,14 @@ class MainActivity:ComponentActivity(){
  private fun connectDs4(){
   if(!permission())return
   if(adapter?.isEnabled!=true){status.text="Bluetooth is turned off.";return}
-  lifecycleScope.launch{status.text="Connecting to Android HID Host...";val r=transport.connect();status.text=r.fold({"DS4 connected through "+transport.name},{"HID Host: "+(it.message?:it.javaClass.simpleName)})}
+  lifecycleScope.launch{
+   status.text="Checking Android HID Host connection..."
+   val r=transport.connect()
+   status.text=r.fold(
+    {"DS4 HID is connected. Android controls the Bluetooth connection."},
+    {"DS4 is not connected yet. Turn on the controller and wait for Android to connect it."}
+   )
+  }
  }
  private fun sendCurrentColor(){
   if(!permission())return
@@ -145,7 +153,7 @@ class MainActivity:ComponentActivity(){
  }
  private fun updateBluetoothStatus(){
   if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S&&!permissionGranted()){status.text="Allow Nearby devices permission.";return}
-  status.text=when{adapter==null->"Bluetooth is not available.";adapter?.isEnabled!=true->"Bluetooth is turned off.";else->"Bluetooth ready. Connect the DS4 in Android Bluetooth settings."}
+  status.text=when{adapter==null->"Bluetooth is not available.";adapter?.isEnabled!=true->"Bluetooth is turned off.";else->"Bluetooth ready. Android controls DS4 connection."}
  }
  private fun permissionGranted()=ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED&&ContextCompat.checkSelfPermission(this,Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED
  override fun onResume(){super.onResume();if(::status.isInitialized){updateBluetoothStatus();updateBackgroundStatus();startKeeperIfReady()}}
