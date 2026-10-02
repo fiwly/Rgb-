@@ -149,26 +149,20 @@ class AndroidHidHostTransport(
             ?: return Result.failure(IllegalStateException("No paired DualShock 4 found"))
         device = ds4
 
-        var p = proxy
-        if (p == null) {
+        if (proxy == null) {
             val connection = connect()
             if (connection.isFailure) return connection
-            p = proxy
         }
 
-        val profile = p
-            ?: return Result.failure(IllegalStateException("HID Host proxy is unavailable"))
+        val report = Ds4Report.bluetoothLightbar(color.red, color.green, color.blue)
+        val hex = report.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+        val hostClass = Class.forName("android.bluetooth.BluetoothHidHost")
+        val attempts = mutableListOf<String>()
 
-        return try {
-            val report = Ds4Report.bluetoothLightbar(color.red, color.green, color.blue)
-            val hex = report.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
-            val hostClass = Class.forName("android.bluetooth.BluetoothHidHost")
-            val attempts = mutableListOf<String>()
-
+        val profile = proxy
+        if (profile != null) {
             try {
-                val value = HiddenApiBypass.invoke(
-                    hostClass, profile, "sendData", ds4, hex
-                ) as? Boolean
+                val value = HiddenApiBypass.invoke(hostClass, profile, "sendData", ds4, hex) as? Boolean
                 attempts += "sendData=$value"
                 if (value == true) return Result.success(Unit)
             } catch (t: Throwable) {
@@ -176,24 +170,70 @@ class AndroidHidHostTransport(
             }
 
             try {
-                val value = HiddenApiBypass.invoke(
-                    hostClass, profile, "setReport", ds4, 0x02.toByte(), hex
-                ) as? Boolean
+                val value = HiddenApiBypass.invoke(hostClass, profile, "setReport", ds4, 0x02.toByte(), hex) as? Boolean
                 attempts += "setReport=$value"
                 if (value == true) return Result.success(Unit)
             } catch (t: Throwable) {
                 attempts += "setReport threw ${shortError(t)}"
             }
-
-            Result.failure(
-                UnsupportedOperationException(
-                    "HID output failed. attempts=${attempts.joinToString(" | ")}"
-                )
-            )
-        } catch (t: Throwable) {
-            Result.failure(t.cause ?: t)
         }
+
+        val direct = directL2capSend(ds4, report)
+        if (direct.isSuccess) return direct
+        attempts += "directL2cap=${direct.exceptionOrNull()?.message ?: "failed"}"
+
+        return Result.failure(
+            UnsupportedOperationException("HID output failed. ${attempts.joinToString(" | ")}")
+        )
     }
+
+    private suspend fun directL2capSend(ds4: BluetoothDevice, report: ByteArray): Result<Unit> =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            var last: Throwable? = null
+            repeat(3) { attempt ->
+                var control: android.bluetooth.BluetoothSocket? = null
+                var interrupt: android.bluetooth.BluetoothSocket? = null
+                try {
+                    if (attempt > 0) delay(350L)
+
+                    val createSecure = ds4.javaClass.getDeclaredMethod(
+                        "createL2capSocket", Int::class.javaPrimitiveType
+                    ).apply { isAccessible = true }
+                    val createInsecure = ds4.javaClass.getDeclaredMethod(
+                        "createInsecureL2capSocket", Int::class.javaPrimitiveType
+                    ).apply { isAccessible = true }
+
+                    control = try {
+                        createSecure.invoke(ds4, 0x11) as android.bluetooth.BluetoothSocket
+                    } catch (_: Throwable) {
+                        createInsecure.invoke(ds4, 0x11) as android.bluetooth.BluetoothSocket
+                    }
+                    control.connect()
+                    control.close()
+                    control = null
+
+                    interrupt = try {
+                        createSecure.invoke(ds4, 0x13) as android.bluetooth.BluetoothSocket
+                    } catch (_: Throwable) {
+                        createInsecure.invoke(ds4, 0x13) as android.bluetooth.BluetoothSocket
+                    }
+                    interrupt.connect()
+
+                    interrupt.outputStream.use { out ->
+                        out.write(0xA2)
+                        out.write(report)
+                        out.flush()
+                    }
+                    return@withContext Result.success(Unit)
+                } catch (t: Throwable) {
+                    last = t.cause ?: t
+                } finally {
+                    try { control?.close() } catch (_: Throwable) {}
+                    try { interrupt?.close() } catch (_: Throwable) {}
+                }
+            }
+            Result.failure(last ?: IllegalStateException("Direct L2CAP failed"))
+        }
 
     private fun findBondedDs4(): BluetoothDevice? {
         return try {
