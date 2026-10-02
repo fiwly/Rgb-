@@ -34,16 +34,16 @@ class Ds4ColorKeeperService : Service() {
     private suspend fun monitorConnection() {
         var lastConnected = false
         var restoreNeeded = true
+        var proxyReady = false
 
-        // No fixed startup delay. Bluetooth receiver events already start/wake
-        // this service, so a fixed delay only makes RGB restore feel slow.
         while (scope.isActive) {
             try {
                 val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
                 if (!prefs.getBoolean("auto_enabled", false)) {
                     lastConnected = false
                     restoreNeeded = true
-                    delay(1500L)
+                    proxyReady = false
+                    delay(1000L)
                     continue
                 }
 
@@ -56,61 +56,45 @@ class Ds4ColorKeeperService : Service() {
 
                 val t = transport
                 if (t == null) {
-                    delay(1500L)
+                    delay(1000L)
                     continue
                 }
 
-                if (!t.isConnected()) {
-                    lastConnected = false
-                    restoreNeeded = true
-
-                    // Reconnect through the actual HID Host state only.
-                    // Never open raw L2CAP sockets here; those can produce
-                    // "ACL connection failed" during a normal Bluetooth reconnect.
-                    val connected = t.connect()
-                    if (connected.isSuccess) {
-                        val result = t.setLightbar(color)
-                        if (result.isSuccess) {
-                            restoreNeeded = false
-                            lastConnected = true
-                            delay(250L)
-                        } else {
-                            delay(500L)
-                        }
-                    } else {
-                        delay(800L)
-                    }
-                    continue
+                if (!proxyReady) {
+                    t.connect()
+                    proxyReady = true
                 }
 
                 val connectedNow = t.isConnected()
 
-                if (connectedNow && (!lastConnected || restoreNeeded)) {
-                    // HID can report CONNECTED a little before the controller is
-                    // ready for output. Retry the actual RGB report several times,
-                    // but only during a reconnect/restore event.
+                if (!connectedNow) {
+                    lastConnected = false
+                    restoreNeeded = true
+                    delay(250L)
+                    continue
+                }
+
+                if (!lastConnected || restoreNeeded) {
                     var restored = false
-                    // Give the controller/HID output channel a longer window after
-                    // reconnect. This is only active during a restore event, so it
-                    // does not fight games while the controller remains connected.
-                    repeat(5) {
+                    repeat(8) {
                         if (!scope.isActive || !t.isConnected()) return@repeat
                         val result = t.setLightbar(color)
                         if (result.isSuccess) {
                             restored = true
                             return@repeat
                         }
-                        delay(300L)
+                        delay(250L)
                     }
                     restoreNeeded = !restored
                 }
 
-                lastConnected = connectedNow
-                delay(500L)
+                lastConnected = true
+                delay(350L)
             } catch (_: Throwable) {
                 lastConnected = false
                 restoreNeeded = true
-                delay(2000L)
+                proxyReady = false
+                delay(1000L)
             }
         }
     }
