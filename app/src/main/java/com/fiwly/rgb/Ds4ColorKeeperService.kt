@@ -64,31 +64,17 @@ class Ds4ColorKeeperService : Service() {
                     lastConnected = false
                     restoreNeeded = true
 
-                    // Keep the HID Host proxy alive. Repeatedly closing/recreating
-                    // it can race Android's Bluetooth HID service on reconnect.
-                    var reconnected = false
-                    repeat(4) {
-                        if (!scope.isActive) return@repeat
-                        val result = t.connect()
-                        if (result.isSuccess && t.isConnected()) {
-                            reconnected = true
-                            return@repeat
-                        }
-                        delay(500L)
-                    }
-
-                    if (!reconnected) {
-                        // HID Host reconnect is privileged on current Android.
-                        // Give the transport its raw DS4 L2CAP fallback one
-                        // chance to wake the controller/link and restore RGB.
-                        val rawRestore = t.setLightbar(color)
-                        if (rawRestore.isSuccess) {
-                            restoreNeeded = false
-                            lastConnected = false
-                            delay(500L)
-                        } else {
-                            delay(1000L)
-                        }
+                    // Do not reconnect through HID policy loops here.
+                    // Android may report policy UNKNOWN to normal apps even
+                    // though the controller is paired. Let setLightbar() try
+                    // the real output channel first, then HID state.
+                    val result = t.setLightbar(color)
+                    if (result.isSuccess) {
+                        restoreNeeded = false
+                        lastConnected = false
+                        delay(250L)
+                    } else {
+                        delay(600L)
                     }
                     continue
                 }
