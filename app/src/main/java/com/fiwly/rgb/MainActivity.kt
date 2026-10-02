@@ -62,8 +62,8 @@ class MainActivity:ComponentActivity(){
    status.text="Checking Android HID Host connection..."
    val r=transport.connect()
    status.text=r.fold(
-    {"DS4 HID is connected. Android controls the Bluetooth connection."},
-    {"DS4 is not connected yet. Turn on the controller and wait for Android to connect it."}
+    {"DS4 detected • HID Host ready. Press APPLY to send the color."},
+    {"DS4 found but Android HID Host is unavailable: "+(it.message?:it.javaClass.simpleName)}
    )
   }
  }
