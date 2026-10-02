@@ -21,7 +21,6 @@ class AndroidHidHostTransport(
         private const val HID_HOST_PROFILE = 4
         // Hidden/System API values from BluetoothProfile. They are not exposed
         // in the public SDK, so keep the stable platform values locally.
-        private const val CONNECTION_POLICY_ALLOWED = 100
         private const val HID_CONTROL_PSM = 0x11
         private const val HID_INTERRUPT_PSM = 0x13
         private const val CONNECT_TIMEOUT_MS = 3_000L
@@ -135,33 +134,6 @@ class AndroidHidHostTransport(
         } catch (_: Throwable) {
             BluetoothProfile.STATE_DISCONNECTED
         }
-
-    private fun getConnectionPolicy(p: BluetoothProfile, d: BluetoothDevice): Int {
-        return try {
-            val hostClass = Class.forName("android.bluetooth.BluetoothHidHost")
-            (HiddenApiBypass.invoke(hostClass, p, "getConnectionPolicy", d) as? Int)
-                ?: CONNECTION_POLICY_UNKNOWN
-        } catch (_: Throwable) {
-            CONNECTION_POLICY_UNKNOWN
-        }
-    }
-
-    private fun trySetConnectionPolicyAllowed(p: BluetoothProfile, d: BluetoothDevice): Boolean? {
-        return try {
-            val hostClass = Class.forName("android.bluetooth.BluetoothHidHost")
-            (HiddenApiBypass.invoke(
-                hostClass,
-                p,
-                "setConnectionPolicy",
-                d,
-                CONNECTION_POLICY_ALLOWED
-            ) as? Boolean) ?: false
-        } catch (_: SecurityException) {
-            null
-        } catch (_: Throwable) {
-            false
-        }
-    }
 
     private suspend fun waitForConnected(
         p: BluetoothProfile,
