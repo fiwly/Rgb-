@@ -64,17 +64,21 @@ class Ds4ColorKeeperService : Service() {
                     lastConnected = false
                     restoreNeeded = true
 
-                    // Do not reconnect through HID policy loops here.
-                    // Android may report policy UNKNOWN to normal apps even
-                    // though the controller is paired. Let setLightbar() try
-                    // the real output channel first, then HID state.
-                    val result = t.setLightbar(color)
-                    if (result.isSuccess) {
-                        restoreNeeded = false
-                        lastConnected = false
-                        delay(250L)
+                    // Reconnect through the actual HID Host state only.
+                    // Never open raw L2CAP sockets here; those can produce
+                    // "ACL connection failed" during a normal Bluetooth reconnect.
+                    val connected = t.connect()
+                    if (connected.isSuccess) {
+                        val result = t.setLightbar(color)
+                        if (result.isSuccess) {
+                            restoreNeeded = false
+                            lastConnected = true
+                            delay(250L)
+                        } else {
+                            delay(500L)
+                        }
                     } else {
-                        delay(600L)
+                        delay(800L)
                     }
                     continue
                 }
